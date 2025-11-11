@@ -228,24 +228,30 @@ export default function GenerateSchedule() {
 
             <ScheduleCalendar
               schedule={(() => {
-                // Group shifts by date
-                const groupedByDate = (generatedSchedule.schedule || []).reduce((acc: any, item: any) => {
-                  if (!acc[item.date]) {
-                    acc[item.date] = {
-                      date: item.date,
-                      pattern: item.pattern || 7,
-                      assignments: []
-                    };
+                if (!generatedSchedule.schedule) return [];
+                
+                // Transform AI response format to calendar format
+                return generatedSchedule.schedule.map((day: any) => {
+                  const assignments = [];
+                  
+                  // Convert shifts object to assignments array
+                  if (day.shifts && typeof day.shifts === 'object') {
+                    for (const [shiftType, providerName] of Object.entries(day.shifts)) {
+                      if (shiftType && providerName && shiftType !== 'HL') {
+                        assignments.push({
+                          shift: shiftType,
+                          provider: providerName as string
+                        });
+                      }
+                    }
                   }
-                  if (item.shift && item.shift !== 'HL') {
-                    acc[item.date].assignments.push({
-                      shift: item.shift,
-                      provider: item.provider || ''
-                    });
-                  }
-                  return acc;
-                }, {});
-                return Object.values(groupedByDate);
+                  
+                  return {
+                    date: day.date,
+                    pattern: day.pattern || 7,
+                    assignments
+                  };
+                });
               })()}
               month={`${month} ${year}`}
             />
