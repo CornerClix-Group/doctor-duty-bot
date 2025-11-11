@@ -12,7 +12,7 @@ serve(async (req) => {
   }
 
   try {
-    const { month, year, providerProfiles, existingAssignments } = await req.json();
+    const { providerProfiles, scheduleData } = await req.json();
     
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) {
@@ -20,64 +20,101 @@ serve(async (req) => {
     }
 
     // Build the system prompt for the AI
-    const systemPrompt = `You are an advanced scheduling engine for ShiftPro, a healthcare provider scheduling application.
+    const systemPrompt = `You are the Shift Pro Scheduling Engine. Your job is to generate a complete, rule-compliant monthly physician schedule.
 
-Your task is to generate an optimal monthly shift schedule that:
-1. Respects all provider constraints (allowed/disallowed shifts, weekend quotas, target shift counts)
-2. Balances workload fairly across all providers
-3. Ensures adequate coverage for all shifts
-4. Minimizes consecutive night shifts and provides adequate rest periods
-5. Honors blocked days and time-off requests
-6. Respects weekend rotation rules
+INPUTS:
+1. provider_profiles — a JSON array of permanent rules for each provider. Example:
+[
+  {
+    "first_name": "Nicole",
+    "last_name": "Lopez",
+    "email": "nlopez1693@gmail.com",
+    "allowed_shifts": ["D1","FT AM"],
+    "rules": { "max_consecutive_shifts": 2, "disallowed_shifts": ["N"], "rest_hours": 12 }
+  }
+]
 
-SHIFT TYPES:
-- D1, D2: Day shifts (12-hour)
-- MIDA, MIDB: Mid shifts
-- E: Evening shift
-- N: Night shift (requires recovery time)
-- FT AM, FT PM, FT W: Full-time shifts
-
-CONSTRAINTS TO ENFORCE:
-- allowed_shifts: Provider can ONLY work these shifts
-- disallowed_shifts: Provider must NEVER work these shifts
-- weekend_quota: Max weekend days per month
-- target_shifts: Target number of shifts for the month
-- max_consecutive_n: Max consecutive night shifts
-- rest_hours: Minimum hours between shifts (default 12)
-- n_recovery_days: Recovery days needed after night shifts (default 2)
-- saturday_restrictions/sunday_restrictions: Special weekend rules
-
-Return the schedule as a JSON object with this structure:
+2. schedule_data — a JSON object for the current month, parsed from the uploaded spreadsheet. Example:
 {
-  "schedule": [
-    {
-      "date": "2026-01-01",
-      "dayOfWeek": "Thu",
-      "shifts": {
-        "D1": "Lopez",
-        "D2": "Arnett",
-        "MIDA": "Campo-Ford",
-        "MIDB": "Cary",
-        "E": "Venugopal",
-        "N": "Coffin"
-      }
-    }
-  ],
-  "providerTotals": {
-    "Lopez": { "totalShifts": 15, "weekendDays": 4 },
-    "Arnett": { "totalShifts": 14, "weekendDays": 3 }
-  },
-  "warnings": ["Provider X exceeded weekend quota by 1 day"]
-}`;
+  "month": "January 2026",
+  "providers": [
+    { "name": "Troy Akers", "target_shifts": 35, "weekend_quota": 4 },
+    { "name": "David Coffin", "target_shifts": 12, "weekend_quota": 2 }
+  ]
+}
 
-    const userPrompt = `Generate a schedule for ${month} ${year}.
+CONTEXT:
+Each day in the schedule has a coverage pattern defined by Row 2 of the spreadsheet:
+- If pattern = 7 → required shifts: D1, D2, MIDA, MIDB, E, N, FT W
+- If pattern = 8 → required shifts: D1, D2, MIDA, MIDB, E, N, FT AM, FT PM
+
+All shifts are 10 hours long:
+D1 06:00–16:00
+FT AM 07:00–17:00
+D2 08:00–18:00
+MIDA 11:00–21:00
+FT PM 14:00–00:00
+MIDB 15:00–01:00
+E   17:00–03:00
+N   22:00–08:00
+FT W 10:00–20:00
+
+RULES:
+1. Each provider can only work one shift per day.
+2. Maintain ≥12h rest between shifts.
+3. After a Night (N) shift, provider must have at least two full days off before any non-N shift.
+4. Providers restricted to specific shifts must only be assigned those shifts:
+   - Coffin: N only, in blocks of 3–4 N shifts, then 2 days off minimum.
+   - Cary: All except D1; prefers later shifts (MIDB→E→N); ≤4 consecutive N.
+   - Venugopal: E only; ≤2 consecutive E shifts; ≥2 days off after.
+   - Lopez: D1 or FT AM only; ≤2 consecutive total shifts; never N.
+   - Orlando, Beckman: All except N.
+   - Ryals, Campo-Ford, Sellars-Pompey: Only FT AM, FT PM, FT W, MIDA.
+   - Arnett: Cannot work E/N on Saturday; on Sunday only MIDB/E/N (avoid Sundays if possible).
+   - Beach: Avoid Sunday; if necessary, only MIDB/E/N.
+   - Akers: Any except "C".
+   - Others: All shifts allowed if compliant with rest rules.
+5. Each provider's total shifts must exactly match their monthly target.
+6. Each provider's weekend quota (Sat+Sun) must match the monthly target (within ±1 if absolutely necessary).
+7. Every required shift per day must be filled.
+
+OUTPUT:
+Return a JSON object that exactly matches this structure:
+
+{
+  "month": "January 2026",
+  "schedule": [
+    { "date": "2026-01-01", "shift": "D1", "provider": "Lopez" },
+    { "date": "2026-01-01", "shift": "N", "provider": "Coffin" },
+    ...
+  ],
+  "provider_totals": [
+    { "provider": "Lopez", "total": 35, "weekend": 4 },
+    { "provider": "Coffin", "total": 12, "weekend": 2 }
+  ]
+}
+
+REQUIREMENTS:
+- Do not exceed or miss any provider's total shifts.
+- Ensure at least 12 hours rest and recovery rules are honored.
+- Assign shifts evenly across the month for fairness.
+- Avoid assigning disallowed shifts.
+- Include every shift listed by the day's coverage pattern.
+- If a rule conflict occurs, select the least-impact alternative but explain it in a comment key 'notes' (optional).
+
+If any provider has unused shift slots or cannot meet requirements, distribute the remaining shifts across other eligible providers who maintain rest spacing and quota compliance.
+
+Return only valid JSON conforming to the provided schema.`;
+
+    const userPrompt = `Generate a complete monthly schedule.
 
 PROVIDER PROFILES:
 ${JSON.stringify(providerProfiles, null, 2)}
 
-${existingAssignments ? `EXISTING ASSIGNMENTS:\n${JSON.stringify(existingAssignments, null, 2)}` : ''}
+SCHEDULE DATA:
+${JSON.stringify(scheduleData, null, 2)}
 
-Generate the complete monthly schedule following all constraints.`;
+Generate the complete monthly schedule following all constraints and rules.`;
 
     console.log("Calling Lovable AI for schedule generation...");
 
@@ -132,10 +169,10 @@ Generate the complete monthly schedule following all constraints.`;
       content = content.replace(/\n```$/, '');
     }
     
-    const scheduleData = JSON.parse(content);
+    const generatedSchedule = JSON.parse(content);
     console.log("Schedule generated successfully");
 
-    return new Response(JSON.stringify(scheduleData), {
+    return new Response(JSON.stringify(generatedSchedule), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error: any) {
