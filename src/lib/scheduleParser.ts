@@ -76,7 +76,9 @@ const D1_PROVIDERS = ['Lopez', 'Arnett', 'Beres', 'Illston', 'Freeman', 'Ferguso
 const D1_PRIORITY = ['Lopez', 'Arnett', 'Beres', 'Illston', 'Freeman', 'Ferguson', 'Jones'];
 
 export function parseScheduleData(worksheet: XLSX.WorkSheet): ScheduleData {
+  console.log('Starting schedule parsing...');
   const range = XLSX.utils.decode_range(worksheet['!ref'] || 'A1');
+  console.log('Sheet range:', range);
   
   // Parse providers from row 2 (index 1)
   const providers: { [name: string]: Provider } = {};
@@ -95,6 +97,7 @@ export function parseScheduleData(worksheet: XLSX.WorkSheet): ScheduleData {
       };
     }
   }
+  console.log('Parsed providers:', Object.keys(providers));
 
   // Parse days starting from row 4
   const days: DayData[] = [];
@@ -110,20 +113,25 @@ export function parseScheduleData(worksheet: XLSX.WorkSheet): ScheduleData {
 
     // Handle Excel date values properly
     let date: Date;
-    if (dateCell.t === 'd') {
-      // Already a date object
-      date = dateCell.v;
-    } else if (dateCell.t === 'n') {
-      // Excel serial date number
-      date = XLSX.SSF.parse_date_code(dateCell.v);
-    } else {
-      // Try to parse as string
-      date = new Date(dateCell.v);
-    }
-    
-    // Validate the date
-    if (isNaN(date.getTime())) {
-      console.warn(`Invalid date at row ${row}:`, dateCell.v);
+    try {
+      if (typeof dateCell.v === 'number') {
+        // Excel serial date number - convert to JS date
+        const excelEpoch = new Date(1899, 11, 30);
+        date = new Date(excelEpoch.getTime() + dateCell.v * 86400000);
+      } else if (dateCell.v instanceof Date) {
+        date = dateCell.v;
+      } else {
+        // Try to parse as string
+        date = new Date(dateCell.v);
+      }
+      
+      // Validate the date
+      if (isNaN(date.getTime())) {
+        console.warn(`Invalid date at row ${row}:`, dateCell.v);
+        continue;
+      }
+    } catch (err) {
+      console.warn(`Error parsing date at row ${row}:`, dateCell.v, err);
       continue;
     }
 
@@ -148,10 +156,11 @@ export function parseScheduleData(worksheet: XLSX.WorkSheet): ScheduleData {
       dayOfWeek,
       pattern,
       isWeekend,
-      isHoliday: false, // Can be enhanced to detect HL
+      isHoliday: false,
       shifts
     });
   }
 
+  console.log(`Parsed ${days.length} days`);
   return { month, year, days, providers };
 }

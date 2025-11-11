@@ -23,19 +23,18 @@ export const ScheduleUpload = ({ onScheduleLoad }: ScheduleUploadProps) => {
     }
 
     const reader = new FileReader();
-    reader.onload = (e) => {
+    reader.onload = (evt) => {
       try {
-        const data = new Uint8Array(e.target?.result as ArrayBuffer);
-        const workbook = XLSX.read(data, { type: 'array' });
-        const sheetName = workbook.SheetNames[0];
-        const worksheet = workbook.Sheets[sheetName];
+        const bstr = evt.target?.result as ArrayBuffer;
+        const wb = XLSX.read(bstr, { type: 'array' });
+        const ws = wb.Sheets[wb.SheetNames[0]];
         
         // Parse the schedule data
-        const parsedData = parseScheduleData(worksheet);
+        const parsedData = parseScheduleData(ws);
         onScheduleLoad(parsedData);
       } catch (err) {
         setError('Failed to parse Excel file. Please check the format.');
-        console.error(err);
+        console.error('Parse error:', err);
       }
     };
     
