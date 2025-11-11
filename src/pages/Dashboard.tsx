@@ -100,12 +100,12 @@ const Dashboard = () => {
                 <Activity className="h-8 w-8 text-white" />
               </div>
               <div>
-                <h1 className="text-3xl font-bold text-foreground">
-                  MedScheduler AI
-                </h1>
-                <p className="text-sm text-muted-foreground">
-                  Intelligent Physician Scheduling Platform
-                </p>
+              <h1 className="text-3xl font-bold text-foreground">
+                ShiftPro
+              </h1>
+              <p className="text-sm text-muted-foreground">
+                Intelligent Physician Scheduling Platform
+              </p>
               </div>
             </div>
           </div>

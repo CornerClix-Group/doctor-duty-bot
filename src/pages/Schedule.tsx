@@ -51,9 +51,9 @@ const Schedule = () => {
                 <Activity className="h-8 w-8 text-white" />
               </div>
               <div>
-                <h1 className="text-3xl font-bold text-foreground">
-                  Create Schedule
-                </h1>
+              <h1 className="text-3xl font-bold text-foreground">
+                ShiftPro Schedule
+              </h1>
                 <p className="text-sm text-muted-foreground">
                   {!scheduleData && 'Upload your schedule template'}
                   {scheduleData && !validationConfirmed && 'Review and validate data'}

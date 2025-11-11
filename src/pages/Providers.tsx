@@ -115,12 +115,12 @@ const Providers = () => {
                 <UsersIcon className="h-8 w-8 text-white" />
               </div>
               <div>
-                <h1 className="text-3xl font-bold text-foreground">
-                  Provider Management
-                </h1>
-                <p className="text-sm text-muted-foreground">
-                  Manage provider profiles, constraints, and preferences
-                </p>
+              <h1 className="text-3xl font-bold text-foreground">
+                Provider Management
+              </h1>
+              <p className="text-sm text-muted-foreground">
+                Manage provider profiles, constraints, and preferences
+              </p>
               </div>
             </div>
             <Button variant="ghost" size="icon" onClick={() => navigate('/')}>
