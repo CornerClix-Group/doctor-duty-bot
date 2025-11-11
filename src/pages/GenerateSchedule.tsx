@@ -6,6 +6,8 @@ import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { Loader2, Sparkles, Calendar, Download } from 'lucide-react';
 import { ScheduleUpload } from '@/components/ScheduleUpload';
+import { ScheduleCalendar } from '@/components/ScheduleCalendar';
+import { ProviderStats } from '@/components/ProviderStats';
 
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -208,16 +210,10 @@ export default function GenerateSchedule() {
         </div>
 
         {generatedSchedule && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Generated Schedule</CardTitle>
-              <CardDescription>
-                {generatedSchedule.schedule?.length || 0} days scheduled
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {generatedSchedule.warnings && generatedSchedule.warnings.length > 0 && (
+          <div className="space-y-6">
+            {generatedSchedule.warnings && generatedSchedule.warnings.length > 0 && (
+              <Card>
+                <CardContent className="pt-6">
                   <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-4">
                     <h4 className="font-semibold text-yellow-600 mb-2">Warnings:</h4>
                     <ul className="list-disc list-inside space-y-1">
@@ -226,16 +222,38 @@ export default function GenerateSchedule() {
                       ))}
                     </ul>
                   </div>
-                )}
+                </CardContent>
+              </Card>
+            )}
 
-                <div className="bg-muted rounded-lg p-4 max-h-96 overflow-auto">
-                  <pre className="text-xs">
-                    {JSON.stringify(generatedSchedule, null, 2)}
-                  </pre>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+            <ScheduleCalendar
+              schedule={(() => {
+                // Group shifts by date
+                const groupedByDate = (generatedSchedule.schedule || []).reduce((acc: any, item: any) => {
+                  if (!acc[item.date]) {
+                    acc[item.date] = {
+                      date: item.date,
+                      pattern: item.pattern || 7,
+                      assignments: []
+                    };
+                  }
+                  if (item.shift && item.shift !== 'HL') {
+                    acc[item.date].assignments.push({
+                      shift: item.shift,
+                      provider: item.provider || ''
+                    });
+                  }
+                  return acc;
+                }, {});
+                return Object.values(groupedByDate);
+              })()}
+              month={`${month} ${year}`}
+            />
+
+            {generatedSchedule.provider_totals && (
+              <ProviderStats providerTotals={generatedSchedule.provider_totals} />
+            )}
+          </div>
         )}
       </div>
     </div>
