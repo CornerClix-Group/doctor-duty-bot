@@ -47,6 +47,21 @@ export default {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
         },
+        medical: {
+          blue: "hsl(var(--medical-blue))",
+          teal: "hsl(var(--medical-teal))",
+        },
+        shift: {
+          d1: "hsl(var(--shift-d1))",
+          d2: "hsl(var(--shift-d2))",
+          mida: "hsl(var(--shift-mida))",
+          midb: "hsl(var(--shift-midb))",
+          e: "hsl(var(--shift-e))",
+          n: "hsl(var(--shift-n))",
+          ft: "hsl(var(--shift-ft))",
+        },
+        warning: "hsl(var(--warning))",
+        success: "hsl(var(--success))",
         sidebar: {
           DEFAULT: "hsl(var(--sidebar-background))",
           foreground: "hsl(var(--sidebar-foreground))",
