@@ -21,6 +21,8 @@ export const ScheduleValidation = ({ scheduleData, onConfirm, onCancel }: Schedu
   const totalFilledShifts = scheduleData.days.reduce((total, day) => {
     return total + Object.values(day.shifts).filter(v => v && !['X', 'L', 'HL', ''].includes(v)).length;
   }, 0);
+  
+  const totalBlockedDays = Object.values(scheduleData.providerBlocked || {}).reduce((sum, blockedSet) => sum + blockedSet.size, 0);
 
   const providerList = Object.values(scheduleData.providers);
   const hasIssues = providerList.length === 0 || scheduleData.days.length === 0;
@@ -91,24 +93,32 @@ export const ScheduleValidation = ({ scheduleData, onConfirm, onCancel }: Schedu
               Detected Providers ({providerList.length})
             </h3>
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-              {providerList.map(provider => (
-                <Card key={provider.name} className="p-3 bg-card/50">
-                  <p className="font-medium text-foreground text-sm">{provider.name}</p>
-                  <div className="flex gap-2 mt-2">
-                    <Badge variant="outline" className="text-xs">
-                      Target: {provider.targetShifts}
-                    </Badge>
-                    <Badge variant="outline" className="text-xs">
-                      WE: {provider.weekendQuota}
-                    </Badge>
-                  </div>
-                  {provider.constraints.allowedShifts && (
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Only: {provider.constraints.allowedShifts.join(', ')}
-                    </p>
-                  )}
-                </Card>
-              ))}
+              {providerList.map(provider => {
+                const blockedCount = scheduleData.providerBlocked?.[provider.name]?.size || 0;
+                return (
+                  <Card key={provider.name} className="p-3 bg-card/50">
+                    <p className="font-medium text-foreground text-sm">{provider.name}</p>
+                    <div className="flex gap-2 mt-2">
+                      <Badge variant="outline" className="text-xs">
+                        Target: {provider.targetShifts}
+                      </Badge>
+                      <Badge variant="outline" className="text-xs">
+                        WE: {provider.weekendQuota}
+                      </Badge>
+                      {blockedCount > 0 && (
+                        <Badge variant="secondary" className="text-xs">
+                          🚫 {blockedCount}
+                        </Badge>
+                      )}
+                    </div>
+                    {provider.constraints.allowedShifts && (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Only: {provider.constraints.allowedShifts.join(', ')}
+                      </p>
+                    )}
+                  </Card>
+                );
+              })}
             </div>
           </div>
 
@@ -173,6 +183,7 @@ export const ScheduleValidation = ({ scheduleData, onConfirm, onCancel }: Schedu
                 <p className="font-semibold text-foreground">Validation Summary</p>
                 <ul className="text-sm text-muted-foreground space-y-1 mt-2">
                   <li>✓ {totalFilledShifts} shifts already assigned</li>
+                  <li>✓ {totalBlockedDays} provider days blocked (X, L, etc.)</li>
                   <li>✓ {totalBlankShifts} shifts need to be filled</li>
                   <li>✓ {providerList.length} providers with constraints loaded</li>
                   <li>✓ Ready to generate complete schedule</li>

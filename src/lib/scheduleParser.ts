@@ -27,9 +27,29 @@ export interface ScheduleData {
   year: number;
   days: DayData[];
   providers: { [name: string]: Provider };
+  providerBlocked: { [providerName: string]: Set<string> }; // provider -> set of blocked dates
 }
 
 const SHIFT_NAMES = ['D1', 'D2', 'MIDA', 'MIDB', 'E', 'N', 'FT AM', 'FT PM', 'FT W'];
+
+// Normalize shift names for matching
+function normalizeShiftName(text: string): string | null {
+  const upper = text.toUpperCase().replace(/\s+/g, '');
+  
+  const shiftMap: { [key: string]: string } = {
+    'D1': 'D1',
+    'D2': 'D2',
+    'MIDA': 'MIDA',
+    'MIDB': 'MIDB',
+    'E': 'E',
+    'N': 'N',
+    'FTAM': 'FT AM',
+    'FTPM': 'FT PM',
+    'FTW': 'FT W'
+  };
+  
+  return shiftMap[upper] || null;
+}
 
 const PROVIDER_RULES: { [name: string]: Provider['constraints'] } = {
   'Coffin': {
@@ -80,87 +100,125 @@ export function parseScheduleData(worksheet: XLSX.WorkSheet): ScheduleData {
   const range = XLSX.utils.decode_range(worksheet['!ref'] || 'A1');
   console.log('Sheet range:', range);
   
-  // Parse providers from row 2 (index 1)
-  const providers: { [name: string]: Provider } = {};
-  for (let col = 2; col <= range.e.c; col++) {
-    const nameCell = worksheet[XLSX.utils.encode_cell({ r: 1, c: col })];
-    const quotaCell = worksheet[XLSX.utils.encode_cell({ r: 1, c: 1 })]; // Weekend quota in column B
-    const targetCell = worksheet[XLSX.utils.encode_cell({ r: 1, c: 35 })]; // Column AI
-    
-    if (nameCell && nameCell.v) {
-      const name = String(nameCell.v).trim();
-      providers[name] = {
-        name,
-        weekendQuota: quotaCell?.v || 4,
-        targetShifts: targetCell?.v || 30,
-        constraints: PROVIDER_RULES[name] || {}
-      };
+  // Get month/year from first cell (e.g., "Jan-26")
+  const monthCell = worksheet['A1'];
+  let month = 'January';
+  let year = 2026;
+  if (monthCell?.v) {
+    const monthStr = String(monthCell.v);
+    console.log('Month cell value:', monthStr);
+    if (monthStr.includes('-')) {
+      const parts = monthStr.split('-');
+      month = parts[0];
+      year = 2000 + parseInt(parts[1]);
     }
   }
-  console.log('Parsed providers:', Object.keys(providers));
-
-  // Parse days starting from row 4
-  const days: DayData[] = [];
-  const currentDate = new Date();
-  const month = currentDate.toLocaleString('default', { month: 'long' });
-  const year = currentDate.getFullYear();
-
-  for (let row = 3; row <= range.e.r; row++) {
-    const dateCell = worksheet[XLSX.utils.encode_cell({ r: row, c: 0 })];
-    const patternCell = worksheet[XLSX.utils.encode_cell({ r: row, c: 1 })];
+  
+  // Parse dates from row 4 (index 3), starting at column C (index 2)
+  const dateColumns: { col: number; date: string; dayOfWeek: string; pattern: number; isWeekend: boolean }[] = [];
+  
+  for (let col = 2; col <= range.e.c; col++) {
+    const dateCell = worksheet[XLSX.utils.encode_cell({ r: 3, c: col })];
+    const dayCell = worksheet[XLSX.utils.encode_cell({ r: 2, c: col })];
+    const patternCell = worksheet[XLSX.utils.encode_cell({ r: 1, c: col })];
     
-    if (!dateCell?.v) continue;
-
-    // Handle Excel date values properly
-    let date: Date;
-    try {
-      if (typeof dateCell.v === 'number') {
-        // Excel serial date number - convert to JS date
-        const excelEpoch = new Date(1899, 11, 30);
-        date = new Date(excelEpoch.getTime() + dateCell.v * 86400000);
-      } else if (dateCell.v instanceof Date) {
-        date = dateCell.v;
-      } else {
-        // Try to parse as string
-        date = new Date(dateCell.v);
-      }
-      
-      // Validate the date
-      if (isNaN(date.getTime())) {
-        console.warn(`Invalid date at row ${row}:`, dateCell.v);
-        continue;
-      }
-    } catch (err) {
-      console.warn(`Error parsing date at row ${row}:`, dateCell.v, err);
-      continue;
-    }
-
-    const dayOfWeek = date.toLocaleDateString('en-US', { weekday: 'short' });
-    const isWeekend = dayOfWeek === 'Sat' || dayOfWeek === 'Sun';
-    const pattern = patternCell?.v || 7;
-
-    const shifts: { [shiftType: string]: string } = {};
+    if (!dateCell?.v || dateCell.v === '') break; // Stop when no more dates
     
-    // Parse existing shift assignments
-    let colIdx = 2;
-    for (const shiftType of SHIFT_NAMES) {
-      const cell = worksheet[XLSX.utils.encode_cell({ r: row, c: colIdx })];
-      if (cell?.v) {
-        shifts[shiftType] = String(cell.v).trim();
-      }
-      colIdx++;
-    }
-
-    days.push({
+    const dateNum = parseInt(String(dateCell.v));
+    if (isNaN(dateNum)) continue;
+    
+    const dayOfWeek = dayCell?.v ? String(dayCell.v) : '';
+    const pattern = patternCell?.v ? parseInt(String(patternCell.v)) : 7;
+    const isWeekend = dayOfWeek === 'Sa' || dayOfWeek === 'Su';
+    
+    // Construct full date
+    const monthNum = ['January', 'February', 'March', 'April', 'May', 'June', 
+                      'July', 'August', 'September', 'October', 'November', 'December']
+                      .indexOf(month);
+    const date = new Date(year, monthNum, dateNum);
+    
+    dateColumns.push({
+      col,
       date: date.toISOString().split('T')[0],
       dayOfWeek,
       pattern,
-      isWeekend,
-      isHoliday: false,
-      shifts
+      isWeekend
     });
   }
+  
+  console.log(`Found ${dateColumns.length} date columns`);
+  
+  // Parse providers from column A, starting at row 5 (index 4)
+  const providers: { [name: string]: Provider } = {};
+  
+  for (let row = 4; row <= range.e.r; row++) {
+    const nameCell = worksheet[XLSX.utils.encode_cell({ r: row, c: 0 })];
+    const quotaCell = worksheet[XLSX.utils.encode_cell({ r: row, c: 1 })];
+    
+    if (!nameCell?.v || nameCell.v === '') break;
+    
+    const name = String(nameCell.v).trim();
+    if (name === '') continue;
+    
+    providers[name] = {
+      name,
+      weekendQuota: quotaCell?.v ? parseInt(String(quotaCell.v)) : 4,
+      targetShifts: 30, // Will be calculated from existing shifts
+      constraints: PROVIDER_RULES[name] || {}
+    };
+  }
+  
+  console.log('Parsed providers:', Object.keys(providers));
+  
+  // Track blocked days for each provider
+  const providerBlocked: { [providerName: string]: Set<string> } = {};
+  Object.keys(providers).forEach(name => {
+    providerBlocked[name] = new Set();
+  });
+  
+  // Build days with shift assignments AND track blocked days
+  const days: DayData[] = dateColumns.map(dateCol => {
+    const shifts: { [shiftType: string]: string } = {};
+    
+    // For each provider, check what they have on this day
+    Object.keys(providers).forEach((providerName, providerIndex) => {
+      const row = 4 + providerIndex; // Provider rows start at index 4
+      const cell = worksheet[XLSX.utils.encode_cell({ r: row, c: dateCol.col })];
+      
+      if (cell?.v) {
+        const value = String(cell.v).trim();
+        const upperValue = value.toUpperCase();
+        
+        // Check if blocked (X, L, LH, A10, or contains /X or X/)
+        if (upperValue === 'X' || 
+            upperValue.startsWith('L') || 
+            upperValue.startsWith('A') ||
+            value.includes('/x') || 
+            value.includes('x/') ||
+            value.includes('/X') ||
+            value.includes('X/')) {
+          providerBlocked[providerName].add(dateCol.date);
+          return; // Provider blocked this day
+        }
+        
+        // Check if it's an actual shift assignment
+        const normalized = normalizeShiftName(value);
+        if (normalized) {
+          shifts[normalized] = providerName;
+        }
+      }
+    });
+    
+    return {
+      date: dateCol.date,
+      dayOfWeek: dateCol.dayOfWeek,
+      pattern: dateCol.pattern,
+      isWeekend: dateCol.isWeekend,
+      isHoliday: false,
+      shifts
+    };
+  });
 
   console.log(`Parsed ${days.length} days`);
-  return { month, year, days, providers };
+  return { month, year, days, providers, providerBlocked };
 }

@@ -48,16 +48,18 @@ const D1_PRIORITY = ['Lopez', 'Arnett', 'Beres', 'Illston', 'Freeman', 'Ferguson
 class SchedulingEngine {
   private scheduleData: ScheduleData;
   private providerStats: Map<string, { worked: number; weekends: number; lastShift: { date: string; shift: string } | null; consecutiveN: number }>;
+  private providerBlocked: Map<string, Set<string>>; // provider -> set of blocked dates
   private schedule: DaySchedule[];
   private warnings: string[];
 
   constructor(scheduleData: ScheduleData) {
     this.scheduleData = scheduleData;
     this.providerStats = new Map();
+    this.providerBlocked = new Map();
     this.schedule = [];
     this.warnings = [];
 
-    // Initialize provider stats
+    // Initialize provider stats and load blocked days from parsed data
     Object.keys(scheduleData.providers).forEach(name => {
       this.providerStats.set(name, {
         worked: 0,
@@ -65,7 +67,15 @@ class SchedulingEngine {
         lastShift: null,
         consecutiveN: 0
       });
+      
+      // Load blocked days from parsed data
+      const blocked = scheduleData.providerBlocked[name] || new Set();
+      this.providerBlocked.set(name, blocked);
     });
+  }
+  
+  private buildBlockedDaysMap() {
+    // No longer needed - blocked days are now passed in from parser
   }
 
   generate(): ScheduleResult {
@@ -199,6 +209,12 @@ class SchedulingEngine {
 
     const stats = this.providerStats.get(providerName)!;
     const constraints = provider.constraints;
+    
+    // Check if provider is blocked on this day (X, L, etc.)
+    const blockedDays = this.providerBlocked.get(providerName);
+    if (blockedDays?.has(day.date)) {
+      return false;
+    }
 
     // Check if provider can work this shift type
     if (constraints.allowedShifts && !constraints.allowedShifts.includes(shiftType)) {
