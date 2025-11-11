@@ -1,15 +1,18 @@
 import { useState } from 'react';
-import { Activity } from 'lucide-react';
+import { Activity, LayoutGrid, Table } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { ScheduleUpload } from '@/components/ScheduleUpload';
 import { ScheduleValidation } from '@/components/ScheduleValidation';
 import { SchedulingEngine } from '@/components/SchedulingEngine';
 import { ScheduleTable } from '@/components/ScheduleTable';
+import { ScheduleCalendar } from '@/components/ScheduleCalendar';
 import { ProviderStats } from '@/components/ProviderStats';
 
 const Index = () => {
   const [scheduleData, setScheduleData] = useState<any>(null);
   const [validationConfirmed, setValidationConfirmed] = useState(false);
   const [generatedSchedule, setGeneratedSchedule] = useState<any>(null);
+  const [viewMode, setViewMode] = useState<'calendar' | 'table'>('calendar');
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5">
@@ -69,10 +72,37 @@ const Index = () => {
           {/* Results Section */}
           {generatedSchedule && (
             <div className="space-y-8">
-              <ScheduleTable 
-                schedule={generatedSchedule.schedule}
-                month={generatedSchedule.month}
-              />
+              {/* View Toggle */}
+              <div className="flex justify-end gap-2">
+                <Button
+                  variant={viewMode === 'calendar' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setViewMode('calendar')}
+                >
+                  <LayoutGrid className="h-4 w-4 mr-2" />
+                  Calendar
+                </Button>
+                <Button
+                  variant={viewMode === 'table' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setViewMode('table')}
+                >
+                  <Table className="h-4 w-4 mr-2" />
+                  List
+                </Button>
+              </div>
+
+              {viewMode === 'calendar' ? (
+                <ScheduleCalendar 
+                  schedule={generatedSchedule.schedule}
+                  month={generatedSchedule.month}
+                />
+              ) : (
+                <ScheduleTable 
+                  schedule={generatedSchedule.schedule}
+                  month={generatedSchedule.month}
+                />
+              )}
               
               <ProviderStats 
                 providerTotals={generatedSchedule.provider_totals}
