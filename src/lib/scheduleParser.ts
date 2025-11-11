@@ -114,10 +114,10 @@ export function parseScheduleData(worksheet: XLSX.WorkSheet): ScheduleData {
     }
   }
   
-  // Parse dates from row 4 (index 3), starting at column C (index 2)
+  // Parse dates from row 4 (index 3), starting at column D (index 3) since columns A-C are provider info
   const dateColumns: { col: number; date: string; dayOfWeek: string; pattern: number; isWeekend: boolean }[] = [];
   
-  for (let col = 2; col <= range.e.c; col++) {
+  for (let col = 3; col <= range.e.c; col++) {
     const dateCell = worksheet[XLSX.utils.encode_cell({ r: 3, c: col })];
     const dayCell = worksheet[XLSX.utils.encode_cell({ r: 2, c: col })];
     const patternCell = worksheet[XLSX.utils.encode_cell({ r: 1, c: col })];
@@ -153,17 +153,24 @@ export function parseScheduleData(worksheet: XLSX.WorkSheet): ScheduleData {
   
   for (let row = 4; row <= range.e.r; row++) {
     const nameCell = worksheet[XLSX.utils.encode_cell({ r: row, c: 0 })];
-    const quotaCell = worksheet[XLSX.utils.encode_cell({ r: row, c: 1 })];
+    const weekendQuotaCell = worksheet[XLSX.utils.encode_cell({ r: row, c: 1 })];
+    const targetShiftsCell = worksheet[XLSX.utils.encode_cell({ r: row, c: 2 })];
     
     if (!nameCell?.v || nameCell.v === '') break;
     
     const name = String(nameCell.v).trim();
     if (name === '') continue;
     
+    // Parse weekend quota (default to 4 if not provided)
+    const weekendQuota = weekendQuotaCell?.v ? parseInt(String(weekendQuotaCell.v)) : 4;
+    
+    // Parse target shifts (default to 0 if not provided)
+    const targetShifts = targetShiftsCell?.v ? parseInt(String(targetShiftsCell.v)) : 0;
+    
     providers[name] = {
       name,
-      weekendQuota: quotaCell?.v ? parseInt(String(quotaCell.v)) : 4,
-      targetShifts: 30, // Will be calculated from existing shifts
+      weekendQuota,
+      targetShifts,
       constraints: PROVIDER_RULES[name] || {}
     };
   }
