@@ -18,21 +18,35 @@ interface ScheduleCalendarProps {
   month: string;
 }
 
-const getShiftColor = (shift: string): string => {
-  const colors: { [key: string]: string } = {
-    'D1': 'bg-sky-500 text-white',
-    'D2': 'bg-blue-600 text-white',
-    'MID1': 'bg-amber-500 text-white',
-    'MIDA': 'bg-amber-500 text-white',
-    'MID2': 'bg-orange-600 text-white',
-    'MIDB': 'bg-orange-600 text-white',
-    'E': 'bg-violet-600 text-white',
-    'N': 'bg-slate-700 text-white',
-    'FT AM': 'bg-emerald-600 text-white',
-    'FT PM': 'bg-teal-600 text-white',
-    'FT W': 'bg-lime-600 text-white',
-  };
-  return colors[shift] || 'bg-muted text-muted-foreground';
+const getShiftColor = (shift: string, pattern: number = 7): string => {
+  if (pattern === 7) {
+    const colors: { [key: string]: string } = {
+      'D1': 'bg-sky-500 text-white',
+      'D2': 'bg-blue-600 text-white',
+      'MID1': 'bg-amber-500 text-white',
+      'MIDA': 'bg-amber-500 text-white',
+      'MID2': 'bg-orange-600 text-white',
+      'MIDB': 'bg-orange-600 text-white',
+      'E': 'bg-violet-600 text-white',
+      'N': 'bg-slate-700 text-white',
+      'FT W': 'bg-lime-600 text-white',
+    };
+    return colors[shift] || 'bg-muted text-muted-foreground';
+  } else {
+    const colors: { [key: string]: string } = {
+      'D1': 'bg-cyan-500 text-white',
+      'D2': 'bg-indigo-600 text-white',
+      'MID1': 'bg-yellow-500 text-white',
+      'MIDA': 'bg-yellow-500 text-white',
+      'MID2': 'bg-red-600 text-white',
+      'MIDB': 'bg-red-600 text-white',
+      'E': 'bg-purple-600 text-white',
+      'N': 'bg-gray-700 text-white',
+      'FT AM': 'bg-emerald-600 text-white',
+      'FT PM': 'bg-teal-600 text-white',
+    };
+    return colors[shift] || 'bg-muted text-muted-foreground';
+  }
 };
 
 const getShiftTime = (shift: string, pattern: number): string => {
@@ -160,7 +174,7 @@ export const ScheduleCalendar = ({ schedule, month }: ScheduleCalendarProps) => 
                         key={aIdx}
                         className="text-xs p-1 rounded"
                       >
-                        <Badge className={`${getShiftColor(assignment.shift)} text-xs font-mono w-full justify-center mb-1`}>
+                        <Badge className={`${getShiftColor(assignment.shift, daySchedule.pattern)} text-xs font-mono w-full justify-center mb-1`}>
                           {assignment.shift}
                         </Badge>
                         <div className="text-[10px] text-muted-foreground text-center">
@@ -196,7 +210,7 @@ export const ScheduleCalendar = ({ schedule, month }: ScheduleCalendarProps) => 
                 { code: 'FT W', time: '10a-8p' },
               ].map(shift => (
                 <div key={shift.code} className="text-center">
-                  <Badge className={`${getShiftColor(shift.code)} justify-center w-full mb-1`}>
+                  <Badge className={`${getShiftColor(shift.code, 7)} justify-center w-full mb-1`}>
                     {shift.code}
                   </Badge>
                   <div className="text-xs text-muted-foreground">{shift.time}</div>
@@ -218,7 +232,7 @@ export const ScheduleCalendar = ({ schedule, month }: ScheduleCalendarProps) => 
                 { code: 'FT PM', time: '2p-11p' },
               ].map(shift => (
                 <div key={shift.code} className="text-center">
-                  <Badge className={`${getShiftColor(shift.code)} justify-center w-full mb-1`}>
+                  <Badge className={`${getShiftColor(shift.code, 8)} justify-center w-full mb-1`}>
                     {shift.code}
                   </Badge>
                   <div className="text-xs text-muted-foreground">{shift.time}</div>
