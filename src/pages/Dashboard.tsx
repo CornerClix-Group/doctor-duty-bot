@@ -72,12 +72,7 @@ const Dashboard = () => {
       title: 'Provider Management',
       description: 'Manage provider constraints and preferences',
       icon: Users,
-      action: () => {
-        toast({
-          title: "Coming Soon",
-          description: "Provider management feature will be available soon.",
-        });
-      },
+      action: () => navigate('/providers'),
       variant: 'outline' as const
     },
     {
