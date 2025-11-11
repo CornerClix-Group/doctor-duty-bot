@@ -20,17 +20,17 @@ interface ScheduleCalendarProps {
 
 const getShiftColor = (shift: string): string => {
   const colors: { [key: string]: string } = {
-    'D1': 'bg-blue-500 text-white',
-    'D2': 'bg-cyan-500 text-white',
+    'D1': 'bg-sky-500 text-white',
+    'D2': 'bg-blue-600 text-white',
     'MID1': 'bg-amber-500 text-white',
     'MIDA': 'bg-amber-500 text-white',
-    'MID2': 'bg-orange-500 text-white',
-    'MIDB': 'bg-orange-500 text-white',
-    'E': 'bg-purple-500 text-white',
-    'N': 'bg-indigo-600 text-white',
-    'FT AM': 'bg-emerald-500 text-white',
-    'FT PM': 'bg-teal-500 text-white',
-    'FT W': 'bg-green-500 text-white',
+    'MID2': 'bg-orange-600 text-white',
+    'MIDB': 'bg-orange-600 text-white',
+    'E': 'bg-violet-600 text-white',
+    'N': 'bg-slate-700 text-white',
+    'FT AM': 'bg-emerald-600 text-white',
+    'FT PM': 'bg-teal-600 text-white',
+    'FT W': 'bg-lime-600 text-white',
   };
   return colors[shift] || 'bg-muted text-muted-foreground';
 };
