@@ -78,6 +78,42 @@ RULES:
 6. Each provider's weekend quota (Sat+Sun) must match the monthly target (within ±1 if absolutely necessary).
 7. Every required shift per day must be filled.
 
+ADDITIONAL RULES — EXISTING CELLS AND HOLIDAYS:
+
+The schedule_data input may include pre-existing daily assignments from the spreadsheet.
+Each cell can contain one of the following:
+
+- A valid shift code (D1, D2, MIDA, MIDB, E, N, FT AM, FT PM, FT W)  
+- An "X"  → locked day off, cannot be overwritten  
+- An "L"  → approved leave, cannot be overwritten  
+- "HL"   → official holiday, unscheduled; leave blank unless a provider was pre-assigned
+- Blank  → open shift slot, can be filled
+
+RULES FOR EXISTING CELLS:
+1. Never overwrite any existing value that is a shift, X, L, or HL.
+2. Retain the cell's locked status (represented as locked: true in the data if parsed).
+3. If a day is marked HL (holiday), mark that slot as unavailable unless a provider was explicitly pre-assigned in the uploaded data.
+4. Treat X and L days as true rest days for rest-hour and night-recovery calculations.
+5. The generated schedule must include all coverage shifts while preserving these locked cells exactly as uploaded.
+6. If preserving these cells creates a coverage gap, fill that gap with eligible providers who do not violate any rule.
+7. Never reassign or remove any existing shift assignment that came from the uploaded schedule_data.
+
+For clarity, the output schedule array should preserve these locked entries. If a provider is on leave or has a locked day off, include:
+{
+  "date": "2026-01-02",
+  "shift": "X",
+  "provider": "Lopez"
+}
+
+Or for holidays with no assignment:
+{
+  "date": "2026-01-02",
+  "shift": "HL",
+  "provider": ""
+}
+
+All validation (totals, weekends, etc.) must count only actual work shifts (exclude X, L, HL).
+
 OUTPUT:
 Return a JSON object that exactly matches this structure:
 
@@ -86,6 +122,8 @@ Return a JSON object that exactly matches this structure:
   "schedule": [
     { "date": "2026-01-01", "shift": "D1", "provider": "Lopez" },
     { "date": "2026-01-01", "shift": "N", "provider": "Coffin" },
+    { "date": "2026-01-02", "shift": "X", "provider": "Lopez", "locked": true },
+    { "date": "2026-01-03", "shift": "HL", "provider": "" },
     ...
   ],
   "provider_totals": [
@@ -100,6 +138,7 @@ REQUIREMENTS:
 - Assign shifts evenly across the month for fairness.
 - Avoid assigning disallowed shifts.
 - Include every shift listed by the day's coverage pattern.
+- Preserve all existing assignments and locked cells (X, L, HL) exactly as they appear in schedule_data.
 - If a rule conflict occurs, select the least-impact alternative but explain it in a comment key 'notes' (optional).
 
 If any provider has unused shift slots or cannot meet requirements, distribute the remaining shifts across other eligible providers who maintain rest spacing and quota compliance.
