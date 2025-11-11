@@ -8,14 +8,26 @@ import {
   FileSpreadsheet,
   Plus,
   History,
-  Settings
+  Settings,
+  LogOut
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
+import { useAuth } from '@/contexts/AuthContext';
+import { Button } from '@/components/ui/button';
 
 const Dashboard = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { user, signOut } = useAuth();
+
+  const handleSignOut = async () => {
+    await signOut();
+    toast({
+      title: "Signed out",
+      description: "You have been successfully signed out.",
+    });
+  };
 
   const stats = [
     {
@@ -93,23 +105,32 @@ const Dashboard = () => {
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5">
       {/* Header */}
       <header className="border-b border-border/40 bg-card/50 backdrop-blur-sm sticky top-0 z-50">
-        <div className="container mx-auto px-4 py-6">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="rounded-xl bg-gradient-to-br from-primary to-secondary p-3 shadow-lg">
-                <Activity className="h-8 w-8 text-white" />
+          <div className="container mx-auto px-4 py-6">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="rounded-xl bg-gradient-to-br from-primary to-secondary p-3 shadow-lg">
+                  <Activity className="h-8 w-8 text-white" />
+                </div>
+                <div>
+                  <h1 className="text-3xl font-bold text-foreground">
+                    ShiftPro
+                  </h1>
+                  <p className="text-sm text-muted-foreground">
+                    Intelligent Physician Scheduling Platform
+                  </p>
+                </div>
               </div>
-              <div>
-              <h1 className="text-3xl font-bold text-foreground">
-                ShiftPro
-              </h1>
-              <p className="text-sm text-muted-foreground">
-                Intelligent Physician Scheduling Platform
-              </p>
+              <div className="flex items-center gap-4">
+                <div className="text-right mr-4">
+                  <p className="text-sm font-medium text-foreground">{user?.email}</p>
+                  <p className="text-xs text-muted-foreground">Admin</p>
+                </div>
+                <Button variant="outline" size="icon" onClick={handleSignOut}>
+                  <LogOut className="h-5 w-5" />
+                </Button>
               </div>
             </div>
           </div>
-        </div>
       </header>
 
       {/* Main Content */}
