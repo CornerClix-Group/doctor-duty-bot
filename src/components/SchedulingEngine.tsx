@@ -21,64 +21,43 @@ export const SchedulingEngine = ({ scheduleData, onScheduleGenerated }: Scheduli
     setIsProcessing(true);
     setValidationResults(null);
 
-    // Simulate AI processing
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    try {
+      // Generate the complete schedule
+      const { generateSchedule } = await import('@/lib/schedulingEngine');
+      const result = await generateSchedule(scheduleData);
 
-    // Mock generated schedule
-    const mockSchedule = {
-      month: "January 2025",
-      schedule: [
-        {
-          date: "2025-01-01",
-          pattern: 7,
-          assignments: [
-            { shift: "D1", provider: "Lopez" },
-            { shift: "D2", provider: "Beres" },
-            { shift: "MIDA", provider: "Campo-Ford" },
-            { shift: "MIDB", provider: "Arnett" },
-            { shift: "E", provider: "Venugopal" },
-            { shift: "N", provider: "Coffin" },
-            { shift: "FT W", provider: "Ryals" }
-          ]
-        },
-        {
-          date: "2025-01-02",
-          pattern: 8,
-          assignments: [
-            { shift: "D1", provider: "Arnett" },
-            { shift: "D2", provider: "Illston" },
-            { shift: "MIDA", provider: "Sellars-Pompey" },
-            { shift: "MIDB", provider: "Beach" },
-            { shift: "E", provider: "Cary" },
-            { shift: "N", provider: "Coffin" },
-            { shift: "FT AM", provider: "Lopez" },
-            { shift: "FT PM", provider: "Campo-Ford" }
-          ]
-        }
-      ],
-      provider_totals: {
-        "Lopez": { worked: 35, weekends: 4, target: 36, weekendQuota: 4 },
-        "Coffin": { worked: 12, weekends: 2, target: 12, weekendQuota: 2 },
-        "Beres": { worked: 30, weekends: 3, target: 32, weekendQuota: 3 },
-        "Arnett": { worked: 28, weekends: 3, target: 30, weekendQuota: 3 },
-        "Venugopal": { worked: 18, weekends: 2, target: 18, weekendQuota: 2 },
-        "Cary": { worked: 25, weekends: 3, target: 26, weekendQuota: 3 }
+      const details: string[] = [
+        `${result.schedule.length} days scheduled`,
+        'Provider constraints respected',
+        'Rest requirements enforced',
+        'Weekend quotas balanced'
+      ];
+
+      if (result.warnings && result.warnings.length > 0) {
+        setValidationResults({
+          status: 'warning',
+          message: `Schedule generated with ${result.warnings.length} warnings`,
+          details: result.warnings.slice(0, 5)
+        });
+      } else {
+        setValidationResults({
+          status: 'success',
+          message: 'Schedule generated successfully!',
+          details
+        });
       }
-    };
 
-    setValidationResults({
-      status: 'success',
-      message: 'Schedule generated successfully!',
-      details: [
-        'All shifts filled',
-        'Rest requirements satisfied',
-        'Weekend distribution balanced',
-        'Provider constraints respected'
-      ]
-    });
-
-    onScheduleGenerated(mockSchedule);
-    setIsProcessing(false);
+      onScheduleGenerated(result);
+    } catch (error) {
+      console.error('Scheduling error:', error);
+      setValidationResults({
+        status: 'error',
+        message: 'Failed to generate schedule',
+        details: [error instanceof Error ? error.message : 'Unknown error']
+      });
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   return (
@@ -98,11 +77,13 @@ export const SchedulingEngine = ({ scheduleData, onScheduleGenerated }: Scheduli
           <div className="grid grid-cols-2 gap-4 p-4 rounded-lg bg-muted/30">
             <div>
               <p className="text-xs text-muted-foreground">Total Days</p>
-              <p className="text-2xl font-bold text-foreground">31</p>
+              <p className="text-2xl font-bold text-foreground">{scheduleData?.days?.length || 31}</p>
             </div>
             <div>
               <p className="text-xs text-muted-foreground">Providers</p>
-              <p className="text-2xl font-bold text-foreground">15</p>
+              <p className="text-2xl font-bold text-foreground">
+                {scheduleData?.providers ? Object.keys(scheduleData.providers).length : 15}
+              </p>
             </div>
             <div>
               <p className="text-xs text-muted-foreground">Shift Types</p>

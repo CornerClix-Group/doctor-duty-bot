@@ -4,6 +4,7 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import * as XLSX from 'xlsx';
+import { parseScheduleData } from '@/lib/scheduleParser';
 
 interface ScheduleUploadProps {
   onScheduleLoad: (data: any) => void;
@@ -28,9 +29,10 @@ export const ScheduleUpload = ({ onScheduleLoad }: ScheduleUploadProps) => {
         const workbook = XLSX.read(data, { type: 'array' });
         const sheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[sheetName];
-        const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
         
-        onScheduleLoad({ rawData: jsonData, fileName: file.name });
+        // Parse the schedule data
+        const parsedData = parseScheduleData(worksheet);
+        onScheduleLoad(parsedData);
       } catch (err) {
         setError('Failed to parse Excel file. Please check the format.');
         console.error(err);
