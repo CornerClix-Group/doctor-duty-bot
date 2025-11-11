@@ -170,34 +170,49 @@ export type Database = {
       provider_constraints: {
         Row: {
           allowed_shifts: string[] | null
+          block_pattern: string | null
           created_at: string
           disallowed_shifts: string[] | null
           id: string
           max_consecutive_n: number | null
+          n_recovery_days: number | null
           preferred_shifts: string[] | null
           provider_id: string
+          rest_hours: number | null
+          saturday_restrictions: string | null
+          sunday_restrictions: string | null
           updated_at: string
           weekend_rules: string[] | null
         }
         Insert: {
           allowed_shifts?: string[] | null
+          block_pattern?: string | null
           created_at?: string
           disallowed_shifts?: string[] | null
           id?: string
           max_consecutive_n?: number | null
+          n_recovery_days?: number | null
           preferred_shifts?: string[] | null
           provider_id: string
+          rest_hours?: number | null
+          saturday_restrictions?: string | null
+          sunday_restrictions?: string | null
           updated_at?: string
           weekend_rules?: string[] | null
         }
         Update: {
           allowed_shifts?: string[] | null
+          block_pattern?: string | null
           created_at?: string
           disallowed_shifts?: string[] | null
           id?: string
           max_consecutive_n?: number | null
+          n_recovery_days?: number | null
           preferred_shifts?: string[] | null
           provider_id?: string
+          rest_hours?: number | null
+          saturday_restrictions?: string | null
+          sunday_restrictions?: string | null
           updated_at?: string
           weekend_rules?: string[] | null
         }
@@ -222,6 +237,7 @@ export type Database = {
           phone: string | null
           target_shifts: number
           updated_at: string
+          user_id: string | null
           weekend_quota: number
         }
         Insert: {
@@ -234,6 +250,7 @@ export type Database = {
           phone?: string | null
           target_shifts?: number
           updated_at?: string
+          user_id?: string | null
           weekend_quota?: number
         }
         Update: {
@@ -246,6 +263,7 @@ export type Database = {
           phone?: string | null
           target_shifts?: number
           updated_at?: string
+          user_id?: string | null
           weekend_quota?: number
         }
         Relationships: []

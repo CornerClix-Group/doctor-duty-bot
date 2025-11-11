@@ -11,6 +11,8 @@ import Schedule from "./pages/Schedule";
 import Providers from "./pages/Providers";
 import Admin from "./pages/Admin";
 import Chat from "./pages/Chat";
+import ProviderProfile from "./pages/ProviderProfile";
+import GenerateSchedule from "./pages/GenerateSchedule";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -29,6 +31,8 @@ const App = () => (
             <Route path="/providers" element={<ProtectedRoute><Providers /></ProtectedRoute>} />
             <Route path="/admin" element={<ProtectedRoute><Admin /></ProtectedRoute>} />
             <Route path="/chat" element={<ProtectedRoute><Chat /></ProtectedRoute>} />
+            <Route path="/profile" element={<ProtectedRoute><ProviderProfile /></ProtectedRoute>} />
+            <Route path="/generate" element={<ProtectedRoute><GenerateSchedule /></ProtectedRoute>} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>

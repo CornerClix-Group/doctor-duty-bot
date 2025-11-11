@@ -9,7 +9,11 @@ import {
   Plus,
   History,
   Settings,
-  LogOut
+  LogOut,
+  Sparkles,
+  UserCircle,
+  FileText,
+  MessageSquare
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
@@ -62,11 +66,19 @@ const Dashboard = () => {
 
   const allActions = [
     {
-      title: 'Create New Schedule',
-      description: 'Upload template and generate AI-optimized schedule',
-      icon: Plus,
-      action: () => navigate('/schedule'),
+      title: 'AI Schedule Generator',
+      description: 'Generate optimized schedules using AI',
+      icon: Sparkles,
+      action: () => navigate('/generate'),
       variant: 'default' as const,
+      roles: ['admin'],
+    },
+    {
+      title: 'Provider Management',
+      description: 'Manage provider profiles and constraints',
+      icon: Users,
+      action: () => navigate('/providers'),
+      variant: 'outline' as const,
       roles: ['admin'],
     },
     {
@@ -76,6 +88,14 @@ const Dashboard = () => {
       action: () => navigate('/admin'),
       variant: 'outline' as const,
       roles: ['admin'],
+    },
+    {
+      title: 'My Profile',
+      description: 'Edit your scheduling preferences',
+      icon: UserCircle,
+      action: () => navigate('/profile'),
+      variant: 'outline' as const,
+      roles: ['provider'],
     },
     {
       title: 'Team Chat',
