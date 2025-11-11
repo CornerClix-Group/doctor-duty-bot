@@ -19,6 +19,9 @@ export interface Provider {
   active: boolean;
   created_at: string;
   updated_at: string;
+  invitation_sent_at: string | null;
+  invitation_token: string | null;
+  invitation_accepted_at: string | null;
 }
 
 const Providers = () => {
@@ -64,6 +67,34 @@ const Providers = () => {
   const handleEditProvider = (provider: Provider) => {
     setSelectedProvider(provider);
     setIsDialogOpen(true);
+  };
+
+  const handleSendInvite = async (provider: Provider) => {
+    try {
+      const { error } = await supabase.functions.invoke("send-invitation", {
+        body: {
+          providerId: provider.id,
+          email: provider.email,
+          name: provider.name,
+        },
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: "Invitation sent",
+        description: `Invitation email sent to ${provider.email}`,
+      });
+
+      fetchProviders();
+    } catch (error: any) {
+      console.error("Error sending invitation:", error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to send invitation",
+        variant: "destructive",
+      });
+    }
   };
 
   const handleDeleteProvider = async (id: string) => {
@@ -156,6 +187,7 @@ const Providers = () => {
             loading={loading}
             onEdit={handleEditProvider}
             onDelete={handleDeleteProvider}
+            onSendInvite={handleSendInvite}
           />
 
           {/* Provider Dialog */}

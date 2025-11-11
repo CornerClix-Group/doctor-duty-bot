@@ -1,1 +1,7 @@
 project_id = "hmkzyvfkwhscvgrjewah"
+
+[functions.generate-schedule]
+verify_jwt = true
+
+[functions.send-invitation]
+verify_jwt = true

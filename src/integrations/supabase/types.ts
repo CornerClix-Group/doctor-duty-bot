@@ -232,6 +232,9 @@ export type Database = {
           created_at: string
           email: string | null
           id: string
+          invitation_accepted_at: string | null
+          invitation_sent_at: string | null
+          invitation_token: string | null
           name: string
           notes: string | null
           phone: string | null
@@ -245,6 +248,9 @@ export type Database = {
           created_at?: string
           email?: string | null
           id?: string
+          invitation_accepted_at?: string | null
+          invitation_sent_at?: string | null
+          invitation_token?: string | null
           name: string
           notes?: string | null
           phone?: string | null
@@ -258,6 +264,9 @@ export type Database = {
           created_at?: string
           email?: string | null
           id?: string
+          invitation_accepted_at?: string | null
+          invitation_sent_at?: string | null
+          invitation_token?: string | null
           name?: string
           notes?: string | null
           phone?: string | null

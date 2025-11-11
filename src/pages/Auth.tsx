@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -22,6 +22,21 @@ const Auth = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [forgotPassword, setForgotPassword] = useState(false);
+
+  // Check for invitation token in URL
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const inviteToken = params.get('invite');
+    
+    if (inviteToken) {
+      // Invitation flow - switch to signup mode
+      setIsLogin(false);
+      toast({
+        title: "Welcome to ShiftPro!",
+        description: "Please create your account to accept the invitation.",
+      });
+    }
+  }, [toast]);
 
   const handleEmailAuth = async (e: React.FormEvent) => {
     e.preventDefault();

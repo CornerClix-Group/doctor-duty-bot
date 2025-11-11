@@ -1,7 +1,7 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Edit, Trash2, Mail, Phone, Calendar, CheckCircle, XCircle } from 'lucide-react';
+import { Edit, Trash2, Mail as MailIcon, Phone, Calendar, CheckCircle, XCircle, Send } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Provider } from '@/pages/Providers';
 import {
@@ -21,9 +21,10 @@ interface ProviderListProps {
   loading: boolean;
   onEdit: (provider: Provider) => void;
   onDelete: (id: string) => void;
+  onSendInvite: (provider: Provider) => void;
 }
 
-export const ProviderList = ({ providers, loading, onEdit, onDelete }: ProviderListProps) => {
+export const ProviderList = ({ providers, loading, onEdit, onDelete, onSendInvite }: ProviderListProps) => {
   if (loading) {
     return (
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -87,7 +88,7 @@ export const ProviderList = ({ providers, loading, onEdit, onDelete }: ProviderL
             <div className="space-y-2 text-sm">
               {provider.email && (
                 <div className="flex items-center gap-2 text-muted-foreground">
-                  <Mail className="h-4 w-4" />
+                  <MailIcon className="h-4 w-4" />
                   <span className="truncate">{provider.email}</span>
                 </div>
               )}
@@ -117,10 +118,19 @@ export const ProviderList = ({ providers, loading, onEdit, onDelete }: ProviderL
                 variant="outline"
                 size="sm"
                 className="flex-1"
+                onClick={() => onSendInvite(provider)}
+                disabled={!provider.email}
+                title={provider.email ? "Send invitation email" : "No email address"}
+              >
+                <Send className="mr-2 h-4 w-4" />
+                Invite
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={() => onEdit(provider)}
               >
-                <Edit className="mr-2 h-4 w-4" />
-                Edit
+                <Edit className="h-4 w-4" />
               </Button>
               <AlertDialog>
                 <AlertDialogTrigger asChild>
