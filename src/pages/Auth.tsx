@@ -165,7 +165,7 @@ const Auth = () => {
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="troy.w.akers@gmail.com"
+                  placeholder="your.email@example.com"
                   className="pl-11 bg-white/5 border-white/10 text-white placeholder:text-gray-500 h-12 rounded-xl"
                   required
                 />
