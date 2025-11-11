@@ -1,12 +1,14 @@
 import { useState } from 'react';
 import { Activity } from 'lucide-react';
 import { ScheduleUpload } from '@/components/ScheduleUpload';
+import { ScheduleValidation } from '@/components/ScheduleValidation';
 import { SchedulingEngine } from '@/components/SchedulingEngine';
 import { ScheduleTable } from '@/components/ScheduleTable';
 import { ProviderStats } from '@/components/ProviderStats';
 
 const Index = () => {
   const [scheduleData, setScheduleData] = useState<any>(null);
+  const [validationConfirmed, setValidationConfirmed] = useState(false);
   const [generatedSchedule, setGeneratedSchedule] = useState<any>(null);
 
   return (
@@ -40,8 +42,22 @@ const Index = () => {
             </div>
           )}
 
+          {/* Validation Section */}
+          {scheduleData && !validationConfirmed && (
+            <div className="max-w-4xl mx-auto">
+              <ScheduleValidation 
+                scheduleData={scheduleData}
+                onConfirm={() => setValidationConfirmed(true)}
+                onCancel={() => {
+                  setScheduleData(null);
+                  setValidationConfirmed(false);
+                }}
+              />
+            </div>
+          )}
+
           {/* Processing Section */}
-          {scheduleData && !generatedSchedule && (
+          {scheduleData && validationConfirmed && !generatedSchedule && (
             <div className="max-w-3xl mx-auto">
               <SchedulingEngine 
                 scheduleData={scheduleData}
