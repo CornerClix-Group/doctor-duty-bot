@@ -108,7 +108,25 @@ export function parseScheduleData(worksheet: XLSX.WorkSheet): ScheduleData {
     
     if (!dateCell?.v) continue;
 
-    const date = new Date(dateCell.v);
+    // Handle Excel date values properly
+    let date: Date;
+    if (dateCell.t === 'd') {
+      // Already a date object
+      date = dateCell.v;
+    } else if (dateCell.t === 'n') {
+      // Excel serial date number
+      date = XLSX.SSF.parse_date_code(dateCell.v);
+    } else {
+      // Try to parse as string
+      date = new Date(dateCell.v);
+    }
+    
+    // Validate the date
+    if (isNaN(date.getTime())) {
+      console.warn(`Invalid date at row ${row}:`, dateCell.v);
+      continue;
+    }
+
     const dayOfWeek = date.toLocaleDateString('en-US', { weekday: 'short' });
     const isWeekend = dayOfWeek === 'Sat' || dayOfWeek === 'Sun';
     const pattern = patternCell?.v || 7;
