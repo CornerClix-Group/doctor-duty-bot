@@ -49,12 +49,21 @@ export default function GenerateSchedule() {
 
       console.log('Calling generate-schedule edge function...');
 
+      // Build schedule data in the format expected by the edge function
+      const scheduleData = {
+        month: `${month} ${year}`,
+        providers: providerProfiles.map(p => ({
+          name: p.name,
+          target_shifts: p.targetShifts,
+          weekend_quota: p.weekendQuota
+        })),
+        days: uploadedData?.days || []
+      };
+
       const { data, error } = await supabase.functions.invoke('generate-schedule', {
         body: {
-          month,
-          year,
           providerProfiles,
-          existingAssignments: uploadedData?.days || null
+          scheduleData
         }
       });
 

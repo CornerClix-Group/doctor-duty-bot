@@ -45,19 +45,31 @@ INPUTS:
 
 CONTEXT:
 Each day in the schedule has a coverage pattern defined by Row 2 of the spreadsheet:
-- If pattern = 7 → required shifts: D1, D2, MIDA, MIDB, E, N, FT W
-- If pattern = 8 → required shifts: D1, D2, MIDA, MIDB, E, N, FT AM, FT PM
 
-All shifts are 10 hours long:
-D1 06:00–16:00
-FT AM 07:00–17:00
-D2 08:00–18:00
-MIDA 11:00–21:00
-FT PM 14:00–00:00
-MIDB 15:00–01:00
-E   17:00–03:00
-N   22:00–08:00
-FT W 10:00–20:00
+PATTERN 7 (7 shifts, 10 hours each):
+Required shifts: D1, D2, MID1, MID2, E, N, FT W
+Shift times:
+- D1: 06:00–16:00 (6a to 4p)
+- D2: 08:00–18:00 (8a to 6p)
+- MID1: 11:00–21:00 (11a to 9p)
+- MID2: 14:00–00:00 (2p to 12a)
+- E: 16:00–02:00 (4p to 2a)
+- N: 21:00–07:00 (9p to 7a)
+- FT W: 10:00–20:00 (10a to 8p)
+
+PATTERN 8 (8 shifts, 9 hours each):
+Required shifts: D1, D2, MID1, MID2, E, N, FT AM, FT PM
+Shift times:
+- D1: 06:00–15:00 (6a to 3p)
+- D2: 08:00–17:00 (8a to 5p)
+- MID1: 11:00–20:00 (11a to 8p)
+- MID2: 15:00–00:00 (3p to 12a)
+- E: 17:00–02:00 (5p to 2a)
+- N: 22:00–07:00 (10p to 7a)
+- FT AM: 07:00–16:00 (7a to 4p)
+- FT PM: 14:00–23:00 (2p to 11p)
+
+Note: MIDA and MIDB in legacy data refer to MID1 and MID2 respectively.
 
 RULES:
 1. Each provider can only work one shift per day.
