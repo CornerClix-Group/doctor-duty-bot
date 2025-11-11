@@ -36,3 +36,25 @@ export interface ProviderTotal {
   total: number;
   weekend: number;
 }
+
+export interface GeneratedSchedule {
+  month: string;
+  year: number;
+  schedule: {
+    date: string;
+    pattern: number;
+    assignments: {
+      shift: string;
+      provider: string;
+    }[];
+  }[];
+  provider_totals: {
+    [providerName: string]: {
+      worked: number;
+      weekends: number;
+      target?: number;
+      weekendQuota?: number;
+    };
+  };
+  warnings?: string[];
+}
