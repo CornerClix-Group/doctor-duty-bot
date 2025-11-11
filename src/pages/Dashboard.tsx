@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   Activity, 
@@ -12,10 +11,11 @@ import {
   Settings
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
+import { useToast } from '@/hooks/use-toast';
 
 const Dashboard = () => {
   const navigate = useNavigate();
+  const { toast } = useToast();
 
   const stats = [
     {
@@ -60,21 +60,36 @@ const Dashboard = () => {
       title: 'View Schedule History',
       description: 'Access and manage previous schedules',
       icon: History,
-      action: () => {},
+      action: () => {
+        toast({
+          title: "Coming Soon",
+          description: "Schedule history feature will be available soon.",
+        });
+      },
       variant: 'outline' as const
     },
     {
       title: 'Provider Management',
       description: 'Manage provider constraints and preferences',
       icon: Users,
-      action: () => {},
+      action: () => {
+        toast({
+          title: "Coming Soon",
+          description: "Provider management feature will be available soon.",
+        });
+      },
       variant: 'outline' as const
     },
     {
       title: 'Settings',
       description: 'Configure scheduling rules and preferences',
       icon: Settings,
-      action: () => {},
+      action: () => {
+        toast({
+          title: "Coming Soon",
+          description: "Settings page will be available soon.",
+        });
+      },
       variant: 'outline' as const
     }
   ];
