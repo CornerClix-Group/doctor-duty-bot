@@ -119,14 +119,6 @@ const Dashboard = () => {
       roles: ['admin', 'provider'],
     },
     {
-      title: 'Provider Management',
-      description: 'Manage provider constraints and preferences',
-      icon: Users,
-      action: () => navigate('/providers'),
-      variant: 'outline' as const,
-      roles: ['admin'],
-    },
-    {
       title: 'Request Shift Change',
       description: 'Submit a shift swap request for approval',
       icon: Settings,
