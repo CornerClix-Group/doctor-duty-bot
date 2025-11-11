@@ -13,9 +13,11 @@ interface ScheduleUploadProps {
 export const ScheduleUpload = ({ onScheduleLoad }: ScheduleUploadProps) => {
   const [isDragging, setIsDragging] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
 
   const handleFile = useCallback((file: File) => {
     setError(null);
+    setUploadedFileName(null);
     
     if (!file.name.match(/\.(xlsx|xls)$/)) {
       setError('Please upload an Excel file (.xlsx or .xls)');
@@ -32,6 +34,7 @@ export const ScheduleUpload = ({ onScheduleLoad }: ScheduleUploadProps) => {
         // Parse the schedule data
         const parsedData = parseScheduleData(ws);
         onScheduleLoad(parsedData);
+        setUploadedFileName(file.name);
       } catch (err) {
         setError('Failed to parse Excel file. Please check the format.');
         console.error('Parse error:', err);
@@ -100,20 +103,30 @@ export const ScheduleUpload = ({ onScheduleLoad }: ScheduleUploadProps) => {
             accept=".xlsx,.xls"
             onChange={handleFileInput}
           />
-          <label htmlFor="file-upload">
-            <Button variant="default" size="lg" asChild>
-              <span className="cursor-pointer">
-                <Upload className="mr-2 h-5 w-5" />
-                Choose File
-              </span>
-            </Button>
-          </label>
+          <Button 
+            variant="default" 
+            size="lg"
+            onClick={() => document.getElementById('file-upload')?.click()}
+            type="button"
+          >
+            <Upload className="mr-2 h-5 w-5" />
+            Choose File
+          </Button>
 
           <p className="text-xs text-muted-foreground">
             Supports .xlsx and .xls formats
           </p>
         </div>
       </Card>
+
+      {uploadedFileName && (
+        <Alert className="bg-green-500/10 border-green-500/20 text-green-700">
+          <FileSpreadsheet className="h-4 w-4" />
+          <AlertDescription>
+            Successfully uploaded: <strong>{uploadedFileName}</strong>
+          </AlertDescription>
+        </Alert>
+      )}
 
       {error && (
         <Alert variant="destructive">
