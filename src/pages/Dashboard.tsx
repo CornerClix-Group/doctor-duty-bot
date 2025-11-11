@@ -19,7 +19,7 @@ import { Button } from '@/components/ui/button';
 const Dashboard = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { user, signOut } = useAuth();
+  const { user, role, signOut } = useAuth();
 
   const handleSignOut = async () => {
     await signOut();
@@ -60,13 +60,30 @@ const Dashboard = () => {
     }
   ];
 
-  const quickActions = [
+  const allActions = [
     {
       title: 'Create New Schedule',
       description: 'Upload template and generate AI-optimized schedule',
       icon: Plus,
       action: () => navigate('/schedule'),
-      variant: 'default' as const
+      variant: 'default' as const,
+      roles: ['admin'],
+    },
+    {
+      title: 'Admin Dashboard',
+      description: 'Access admin tools and manage system',
+      icon: Settings,
+      action: () => navigate('/admin'),
+      variant: 'outline' as const,
+      roles: ['admin'],
+    },
+    {
+      title: 'Team Chat',
+      description: 'Communicate with colleagues and admins',
+      icon: History,
+      action: () => navigate('/chat'),
+      variant: 'outline' as const,
+      roles: ['admin', 'provider'],
     },
     {
       title: 'View Schedule History',
@@ -78,28 +95,35 @@ const Dashboard = () => {
           description: "Schedule history feature will be available soon.",
         });
       },
-      variant: 'outline' as const
+      variant: 'outline' as const,
+      roles: ['admin', 'provider'],
     },
     {
       title: 'Provider Management',
       description: 'Manage provider constraints and preferences',
       icon: Users,
       action: () => navigate('/providers'),
-      variant: 'outline' as const
+      variant: 'outline' as const,
+      roles: ['admin'],
     },
     {
-      title: 'Settings',
-      description: 'Configure scheduling rules and preferences',
+      title: 'Request Shift Change',
+      description: 'Submit a shift swap request for approval',
       icon: Settings,
       action: () => {
         toast({
           title: "Coming Soon",
-          description: "Settings page will be available soon.",
+          description: "Shift change request feature will be available soon.",
         });
       },
-      variant: 'outline' as const
-    }
+      variant: 'outline' as const,
+      roles: ['provider'],
+    },
   ];
+
+  const quickActions = allActions.filter(action => 
+    !action.roles || (role && action.roles.includes(role))
+  );
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5">
@@ -123,7 +147,9 @@ const Dashboard = () => {
               <div className="flex items-center gap-4">
                 <div className="text-right mr-4">
                   <p className="text-sm font-medium text-foreground">{user?.email}</p>
-                  <p className="text-xs text-muted-foreground">Admin</p>
+                  <p className="text-xs text-muted-foreground">
+                    {role === 'admin' ? 'Master Admin' : role === 'provider' ? 'Provider' : 'Read Only'}
+                  </p>
                 </div>
                 <Button variant="outline" size="icon" onClick={handleSignOut}>
                   <LogOut className="h-5 w-5" />
