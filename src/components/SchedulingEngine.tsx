@@ -1,8 +1,9 @@
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Loader2, Sparkles, CheckCircle2, AlertTriangle } from 'lucide-react';
+import { Loader2, Sparkles, CheckCircle2, AlertTriangle, Download } from 'lucide-react';
 import { useState } from 'react';
+import { exportScheduleToExcel } from '@/lib/scheduleExporter';
 
 interface SchedulingEngineProps {
   scheduleData: any;
@@ -11,6 +12,7 @@ interface SchedulingEngineProps {
 
 export const SchedulingEngine = ({ scheduleData, onScheduleGenerated }: SchedulingEngineProps) => {
   const [isProcessing, setIsProcessing] = useState(false);
+  const [generatedResult, setGeneratedResult] = useState<any>(null);
   const [validationResults, setValidationResults] = useState<{
     status: 'success' | 'warning' | 'error';
     message: string;
@@ -20,6 +22,7 @@ export const SchedulingEngine = ({ scheduleData, onScheduleGenerated }: Scheduli
   const handleGenerate = async () => {
     setIsProcessing(true);
     setValidationResults(null);
+    setGeneratedResult(null);
 
     try {
       // Generate the complete schedule
@@ -47,6 +50,7 @@ export const SchedulingEngine = ({ scheduleData, onScheduleGenerated }: Scheduli
         });
       }
 
+      setGeneratedResult(result);
       onScheduleGenerated(result);
     } catch (error) {
       console.error('Scheduling error:', error);
@@ -58,6 +62,11 @@ export const SchedulingEngine = ({ scheduleData, onScheduleGenerated }: Scheduli
     } finally {
       setIsProcessing(false);
     }
+  };
+
+  const handleExport = () => {
+    if (!generatedResult || !scheduleData) return;
+    exportScheduleToExcel(scheduleData, generatedResult);
   };
 
   return (
@@ -95,24 +104,37 @@ export const SchedulingEngine = ({ scheduleData, onScheduleGenerated }: Scheduli
             </div>
           </div>
 
-          <Button 
-            onClick={handleGenerate}
-            disabled={isProcessing}
-            className="w-full"
-            size="lg"
-          >
-            {isProcessing ? (
-              <>
-                <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                Generating Schedule...
-              </>
-            ) : (
-              <>
-                <Sparkles className="mr-2 h-5 w-5" />
-                Generate Complete Schedule
-              </>
-            )}
-          </Button>
+          <div className="flex gap-3">
+            <Button 
+              onClick={handleGenerate}
+              disabled={isProcessing}
+              className="flex-1"
+              size="lg"
+            >
+              {isProcessing ? (
+                <>
+                  <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                  Generating Schedule...
+                </>
+              ) : (
+                <>
+                  <Sparkles className="mr-2 h-5 w-5" />
+                  Generate Complete Schedule
+                </>
+              )}
+            </Button>
+
+            <Button
+              onClick={handleExport}
+              disabled={!generatedResult || isProcessing}
+              variant="outline"
+              size="lg"
+              className="flex-shrink-0"
+            >
+              <Download className="mr-2 h-4 w-4" />
+              Export to Excel
+            </Button>
+          </div>
 
           {validationResults && (
             <Alert variant={validationResults.status === 'error' ? 'destructive' : 'default'}>
