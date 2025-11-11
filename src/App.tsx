@@ -10,6 +10,7 @@ import Dashboard from "./pages/Dashboard";
 import Schedule from "./pages/Schedule";
 import Providers from "./pages/Providers";
 import Admin from "./pages/Admin";
+import Broadcast from "./pages/Broadcast";
 import Chat from "./pages/Chat";
 import ProviderProfile from "./pages/ProviderProfile";
 import GenerateSchedule from "./pages/GenerateSchedule";
@@ -32,6 +33,7 @@ const App = () => (
             <Route path="/admin" element={<ProtectedRoute><Admin /></ProtectedRoute>} />
             <Route path="/chat" element={<ProtectedRoute><Chat /></ProtectedRoute>} />
             <Route path="/profile" element={<ProtectedRoute><ProviderProfile /></ProtectedRoute>} />
+            <Route path="/broadcast" element={<ProtectedRoute><Broadcast /></ProtectedRoute>} />
             <Route path="/generate" element={<ProtectedRoute><GenerateSchedule /></ProtectedRoute>} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />

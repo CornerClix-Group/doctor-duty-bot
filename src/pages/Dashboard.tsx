@@ -13,7 +13,8 @@ import {
   Sparkles,
   UserCircle,
   FileText,
-  MessageSquare
+  MessageSquare,
+  Mail
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
@@ -86,6 +87,14 @@ const Dashboard = () => {
       description: 'Access admin tools and manage system',
       icon: Settings,
       action: () => navigate('/admin'),
+      variant: 'outline' as const,
+      roles: ['admin'],
+    },
+    {
+      title: 'Broadcast Emails',
+      description: 'Send announcements to all providers',
+      icon: Mail,
+      action: () => navigate('/broadcast'),
       variant: 'outline' as const,
       roles: ['admin'],
     },
