@@ -119,8 +119,20 @@ Generate the complete monthly schedule following all constraints.`;
     }
 
     const data = await response.json();
-    const scheduleData = JSON.parse(data.choices[0].message.content);
-
+    
+    // Extract the content and remove markdown code fences if present
+    let content = data.choices[0].message.content;
+    console.log("Raw AI response:", content.substring(0, 200)); // Log first 200 chars for debugging
+    
+    // Remove markdown code fences if present
+    if (content.startsWith('```')) {
+      // Remove opening fence (```json or ```)
+      content = content.replace(/^```(?:json)?\n/, '');
+      // Remove closing fence
+      content = content.replace(/\n```$/, '');
+    }
+    
+    const scheduleData = JSON.parse(content);
     console.log("Schedule generated successfully");
 
     return new Response(JSON.stringify(scheduleData), {
