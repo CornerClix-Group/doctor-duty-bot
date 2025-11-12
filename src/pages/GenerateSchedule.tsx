@@ -1,10 +1,11 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
-import { Loader2, Sparkles, Calendar, Download, Trash2 } from 'lucide-react';
+import { Loader2, Sparkles, Calendar, Download, Trash2, ArrowLeft } from 'lucide-react';
 import { ScheduleUpload } from '@/components/ScheduleUpload';
 import { ScheduleCalendar } from '@/components/ScheduleCalendar';
 import { ProviderStats } from '@/components/ProviderStats';
@@ -26,6 +27,7 @@ const MONTHS = [
 ];
 
 export default function GenerateSchedule() {
+  const navigate = useNavigate();
   const { toast } = useToast();
   const [month, setMonth] = useState('January');
   const [year, setYear] = useState(new Date().getFullYear());
@@ -209,14 +211,24 @@ export default function GenerateSchedule() {
   return (
     <div className="min-h-screen bg-background p-6">
       <div className="max-w-6xl mx-auto space-y-6">
-        <div className="flex items-center gap-3">
-          <div className="bg-primary/10 p-3 rounded-xl">
-            <Sparkles className="h-6 w-6 text-primary" />
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="bg-primary/10 p-3 rounded-xl">
+              <Sparkles className="h-6 w-6 text-primary" />
+            </div>
+            <div>
+              <h1 className="text-3xl font-bold text-foreground">AI Schedule Generator</h1>
+              <p className="text-muted-foreground">Generate optimal schedules using AI</p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-3xl font-bold text-foreground">AI Schedule Generator</h1>
-            <p className="text-muted-foreground">Generate optimal schedules using AI</p>
-          </div>
+          <Button
+            variant="outline"
+            onClick={() => navigate('/')}
+            size="lg"
+          >
+            <ArrowLeft className="mr-2 h-5 w-5" />
+            Back to Home
+          </Button>
         </div>
 
         <Card>
