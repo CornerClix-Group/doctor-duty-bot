@@ -406,23 +406,28 @@ export default function GenerateSchedule() {
             <ScheduleCalendar
               schedule={(() => {
                 if (!generatedSchedule.schedule) return [];
-                
-                // Transform AI response format to calendar format
+
+                // Normalize to [{ date, pattern, assignments: [{shift, provider}] }]
                 return generatedSchedule.schedule.map((day: any) => {
-                  const assignments = [];
-                  
-                  // Convert shifts object to assignments array
-                  if (day.shifts && typeof day.shifts === 'object') {
+                  let assignments: { shift: string; provider: string }[] = [];
+
+                  if (Array.isArray(day.assignments)) {
+                    // New format from edge function
+                    assignments = day.assignments
+                      .filter((a: any) => a && a.shift && a.shift !== 'HL' && a.shift !== 'LH')
+                      .map((a: any) => ({ shift: a.shift, provider: a.provider ?? '' }));
+                  } else if (day.shifts && typeof day.shifts === 'object') {
+                    // Legacy format support
                     for (const [shiftType, providerName] of Object.entries(day.shifts)) {
-                      if (shiftType && providerName && shiftType !== 'HL') {
+                      if (shiftType && shiftType !== 'HL' && shiftType !== 'LH') {
                         assignments.push({
                           shift: shiftType,
-                          provider: providerName as string
+                          provider: (providerName as string) || ''
                         });
                       }
                     }
                   }
-                  
+
                   return {
                     date: day.date,
                     pattern: day.pattern || 7,
