@@ -132,7 +132,7 @@ export default function GenerateSchedule() {
 
       const schedule_data = normalizeScheduleData();
 
-      const { data, error } = await supabase.functions.invoke('generate-schedule', {
+      const { data, error } = await supabase.functions.invoke('generate-schedule-v2', {
         body: {
           provider_profiles,
           schedule_data

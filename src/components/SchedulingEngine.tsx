@@ -81,7 +81,7 @@ export const SchedulingEngine = ({ scheduleData, onScheduleGenerated }: Scheduli
       });
 
       // Call the edge function with snake_case parameter names
-      const { data, error } = await supabase.functions.invoke('generate-schedule', {
+      const { data, error } = await supabase.functions.invoke('generate-schedule-v2', {
         body: {
           provider_profiles,
           schedule_data: scheduleData
