@@ -102,6 +102,23 @@ export default function GenerateSchedule() {
           weekend_quota: p.weekend_quota,
           days: allDates.map((date) => ({ date, value: '', locked: false }))
         }));
+
+        // Apply locked cells from parser (includes X, L, LH, C, A10, pre-assigned shifts)
+        if (uploadedData?.lockedCells) {
+          for (const [providerName, dateCells] of Object.entries(uploadedData.lockedCells)) {
+            const providerEntry = providerList.find((p: any) => p.name === providerName);
+            if (!providerEntry) continue;
+            
+            for (const [date, value] of Object.entries(dateCells as Record<string, string>)) {
+              const dayCell = providerEntry.days.find((x: any) => x.date === date);
+              if (dayCell) {
+                dayCell.value = value;
+                dayCell.locked = true;
+              }
+            }
+          }
+        }
+
         // If there are pre-assigned shifts in uploadedData.days[].shifts, lock them in the correct provider row
         if (uploadedData?.days && Array.isArray(uploadedData.days)) {
           for (const d of uploadedData.days) {
@@ -116,7 +133,7 @@ export default function GenerateSchedule() {
               });
               if (!match) continue;
               const dayCell = match.days.find((x: any) => x.date === date);
-              if (dayCell) {
+              if (dayCell && !dayCell.locked) {
                 dayCell.value = shiftCode;
                 dayCell.locked = true;
               }
