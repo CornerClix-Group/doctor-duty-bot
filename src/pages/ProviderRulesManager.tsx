@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Save, Settings, CheckCircle2 } from 'lucide-react';
+import { ArrowLeft, Save, Settings, CheckCircle2, SaveAll } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -34,8 +34,10 @@ export default function ProviderRulesManager() {
   const { isAdmin } = useAuth();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<string | null>(null);
+  const [savingAll, setSavingAll] = useState(false);
   const [providers, setProviders] = useState<ProviderConstraint[]>([]);
   const [editingProvider, setEditingProvider] = useState<string | null>(null);
+  const [modifiedProviders, setModifiedProviders] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (!isAdmin) {
@@ -126,6 +128,14 @@ export default function ProviderRulesManager() {
         title: "Success",
         description: `Rules updated for ${provider.provider_name}`,
       });
+      
+      // Remove from modified set
+      setModifiedProviders(prev => {
+        const next = new Set(prev);
+        next.delete(providerId);
+        return next;
+      });
+      
       setEditingProvider(null);
     } catch (error: any) {
       toast({
@@ -138,10 +148,70 @@ export default function ProviderRulesManager() {
     }
   };
 
+  const handleSaveAll = async () => {
+    if (modifiedProviders.size === 0) return;
+    
+    setSavingAll(true);
+    const modifiedList = Array.from(modifiedProviders);
+    let successCount = 0;
+    let errorCount = 0;
+
+    for (const providerId of modifiedList) {
+      const provider = providers.find(p => p.provider_id === providerId);
+      if (!provider) continue;
+
+      try {
+        const { error } = await supabase
+          .from('provider_constraints')
+          .upsert({
+            provider_id: providerId,
+            allowed_shifts: provider.allowed_shifts,
+            disallowed_shifts: provider.disallowed_shifts,
+            preferred_shifts: provider.preferred_shifts,
+            rest_hours: provider.rest_hours,
+            n_recovery_days: provider.n_recovery_days,
+            max_consecutive_n: provider.max_consecutive_n,
+            block_pattern: provider.block_pattern,
+            saturday_restrictions: provider.saturday_restrictions,
+            sunday_restrictions: provider.sunday_restrictions,
+            weekend_rules: provider.weekend_rules,
+          }, {
+            onConflict: 'provider_id'
+          });
+
+        if (error) {
+          errorCount++;
+        } else {
+          successCount++;
+        }
+      } catch (error) {
+        errorCount++;
+      }
+    }
+
+    if (successCount > 0) {
+      toast({
+        title: "Success",
+        description: `Saved ${successCount} provider${successCount > 1 ? 's' : ''}${errorCount > 0 ? `, ${errorCount} failed` : ''}`,
+      });
+      setModifiedProviders(new Set());
+    } else {
+      toast({
+        title: "Error",
+        description: "Failed to save provider rules",
+        variant: "destructive",
+      });
+    }
+    
+    setSavingAll(false);
+  };
+
   const updateProvider = (providerId: string, field: keyof ProviderConstraint, value: any) => {
     setProviders(prev => prev.map(p => 
       p.provider_id === providerId ? { ...p, [field]: value } : p
     ));
+    // Mark provider as modified
+    setModifiedProviders(prev => new Set(prev).add(providerId));
   };
 
   const toggleShift = (providerId: string, field: 'allowed_shifts' | 'disallowed_shifts' | 'preferred_shifts', shift: string) => {
@@ -175,13 +245,38 @@ export default function ProviderRulesManager() {
             </div>
             <div>
               <h1 className="text-3xl font-bold text-foreground">Provider Rules Manager</h1>
-              <p className="text-muted-foreground">Configure scheduling constraints for all providers</p>
+              <p className="text-muted-foreground">
+                Configure scheduling constraints for all providers
+                {modifiedProviders.size > 0 && (
+                  <span className="ml-2 text-sm text-amber-600 dark:text-amber-400">
+                    • {modifiedProviders.size} unsaved change{modifiedProviders.size > 1 ? 's' : ''}
+                  </span>
+                )}
+              </p>
             </div>
           </div>
-          <Button variant="outline" onClick={() => navigate('/')} size="lg">
-            <ArrowLeft className="mr-2 h-5 w-5" />
-            Back to Home
-          </Button>
+          <div className="flex gap-2">
+            {modifiedProviders.size > 0 && (
+              <Button 
+                onClick={handleSaveAll} 
+                disabled={savingAll}
+                size="lg"
+              >
+                {savingAll ? (
+                  <>Saving All...</>
+                ) : (
+                  <>
+                    <SaveAll className="mr-2 h-5 w-5" />
+                    Save All ({modifiedProviders.size})
+                  </>
+                )}
+              </Button>
+            )}
+            <Button variant="outline" onClick={() => navigate('/')} size="lg">
+              <ArrowLeft className="mr-2 h-5 w-5" />
+              Back to Home
+            </Button>
+          </div>
         </div>
 
         {/* Provider Cards */}
@@ -190,13 +285,18 @@ export default function ProviderRulesManager() {
             <Card key={provider.provider_id} className="overflow-hidden">
               <CardHeader className="bg-muted/30">
                 <div className="flex items-center justify-between">
-                  <div>
-                    <CardTitle className="text-xl">{provider.provider_name}</CardTitle>
-                    <CardDescription>Scheduling constraints and preferences</CardDescription>
+                  <div className="flex items-center gap-2">
+                    <div>
+                      <CardTitle className="text-xl">{provider.provider_name}</CardTitle>
+                      <CardDescription>Scheduling constraints and preferences</CardDescription>
+                    </div>
+                    {modifiedProviders.has(provider.provider_id) && (
+                      <div className="h-2 w-2 rounded-full bg-amber-500 animate-pulse" title="Unsaved changes" />
+                    )}
                   </div>
                   <Button
                     onClick={() => handleSave(provider.provider_id)}
-                    disabled={saving === provider.provider_id}
+                    disabled={saving === provider.provider_id || savingAll}
                     size="sm"
                   >
                     {saving === provider.provider_id ? (
