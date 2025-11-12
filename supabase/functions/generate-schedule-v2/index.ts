@@ -399,7 +399,7 @@ serve(async (req) => {
       );
     }
 
-    // Server-side validation: check locked cells
+    // Server-side validation and corrections for locked cells
     const lockedViolations: string[] = [];
     const lockedMap = new Map<string, string>();
 
@@ -414,22 +414,96 @@ serve(async (req) => {
 
     console.log("[v2] Locked cells map:", Array.from(lockedMap.entries()).slice(0, 20));
 
-    // Validate each day's assignments
+    // Apply locked cells by correcting AI output BEFORE validation
+    for (const daySchedule of data.schedule ?? []) {
+      // Build quick lookups for this day
+      const assignments = daySchedule.assignments ?? [];
+
+      // Helper to get all locked entries for this specific date
+      const lockedForDate: Array<[string, string]> = [];
+      lockedMap.forEach((val, key) => {
+        const [date, provider] = key.split("|");
+        if (date === daySchedule.date) lockedForDate.push([provider, val]);
+      });
+
+      if (lockedForDate.length === 0) continue;
+
+      // Enforce X/L/LH (must be off) and exact shift locks
+      for (const [provider, lockedVal] of lockedForDate) {
+        if (!provider) continue;
+        if (lockedVal === 'X' || lockedVal === 'L' || lockedVal === 'LH') {
+          // Remove any assignment for this provider on this day
+          daySchedule.assignments = (daySchedule.assignments ?? []).filter((a: any) => a.provider !== provider);
+          continue;
+        }
+        // Exact shift enforcement: ensure provider is assigned to lockedVal
+        // 1) Remove any other shift assignments for this provider on this day
+        daySchedule.assignments = (daySchedule.assignments ?? []).filter((a: any) => !(a.provider === provider && a.shift !== lockedVal));
+        // 2) If the locked shift exists, set its provider to the locked provider
+        const idx = daySchedule.assignments.findIndex((a: any) => a.shift === lockedVal);
+        if (idx >= 0) {
+          daySchedule.assignments[idx].provider = provider;
+        } else {
+          // 3) Otherwise, add it explicitly
+          daySchedule.assignments.push({ shift: lockedVal, provider });
+        }
+      }
+    }
+
+    // Recompute provider_totals and pay_period_totals from corrected schedule
+    const regularShifts = new Set(['D1','D2','MIDA','MIDB','E','N','FT AM','FT PM','FT W','FT W12']);
+    const targetMap = new Map<string, number>();
+    const quotaMap = new Map<string, number>();
+    for (const p of schedule_data.providers) {
+      targetMap.set(p.name, p.target_shifts ?? 0);
+      quotaMap.set(p.name, p.weekend_quota ?? 0);
+    }
+
+    const providerTotals: Record<string, { worked: number; weekends: number; call: number; admin: number; target: number; weekend_quota: number; }> = {};
+    const payPeriodTotals: Record<string, Record<string, number>> = {};
+
+    for (const daySchedule of data.schedule ?? []) {
+      const dow = new Date(daySchedule.date).getDay(); // 0=Sun,6=Sat
+      const isWeekend = dow === 0 || dow === 6;
+      for (const a of daySchedule.assignments ?? []) {
+        const name = a.provider;
+        if (!name) continue;
+        if (!providerTotals[name]) {
+          providerTotals[name] = {
+            worked: 0,
+            weekends: 0,
+            call: 0,
+            admin: 0,
+            target: targetMap.get(name) ?? 0,
+            weekend_quota: quotaMap.get(name) ?? 0,
+          };
+        }
+        if (!payPeriodTotals[name]) payPeriodTotals[name] = {};
+        const ppKey = `PP${daySchedule.pay_period}`;
+        payPeriodTotals[name][ppKey] = (payPeriodTotals[name][ppKey] ?? 0) + 1; // regular + C + A10
+
+        if (a.shift === 'C') providerTotals[name].call++;
+        else if (a.shift === 'A10') providerTotals[name].admin++;
+        if (regularShifts.has(a.shift)) {
+          providerTotals[name].worked++;
+          if (isWeekend) providerTotals[name].weekends++;
+        }
+      }
+    }
+
+    data.provider_totals = providerTotals;
+    data.pay_period_totals = payPeriodTotals;
+
+    // Validate each day's assignments AFTER correction
     for (const daySchedule of data.schedule ?? []) {
       for (const assignment of daySchedule.assignments ?? []) {
         if (!assignment.provider) continue; // Skip empty assignments
-        
         const key = `${daySchedule.date}|${assignment.provider}`;
         const locked = lockedMap.get(key);
-        
-        // If provider has a locked cell for this date
         if (locked) {
-          // If locked value is X/L/LH, provider should NOT be assigned ANY shift
           if (locked === 'X' || locked === 'L' || locked === 'LH') {
             lockedViolations.push(`${daySchedule.date} ${assignment.provider}: has locked ${locked}, cannot assign ${assignment.shift}`);
-          }
-          // If locked value is a shift, it must match exactly
-          else if (locked !== assignment.shift) {
+          } else if (locked !== assignment.shift) {
             lockedViolations.push(`${daySchedule.date} ${assignment.provider}: expected ${locked}, got ${assignment.shift}`);
           }
         }
@@ -437,7 +511,7 @@ serve(async (req) => {
     }
 
     if (lockedViolations.length) {
-      console.error("[v2] Locked cell violations:", lockedViolations);
+      console.error("[v2] Locked cell violations after correction:", lockedViolations);
       return new Response(
         JSON.stringify({
           error: "Locked cell violation",
