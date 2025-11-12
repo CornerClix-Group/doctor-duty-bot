@@ -116,6 +116,8 @@ export default function ProviderRulesManager() {
           saturday_restrictions: provider.saturday_restrictions,
           sunday_restrictions: provider.sunday_restrictions,
           weekend_rules: provider.weekend_rules,
+        }, {
+          onConflict: 'provider_id'
         });
 
       if (error) throw error;
