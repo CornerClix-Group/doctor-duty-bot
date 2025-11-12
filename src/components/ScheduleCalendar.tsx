@@ -122,18 +122,29 @@ const getShiftStartHour = (shift: string, pattern: number): number => {
 };
 
 export const ScheduleCalendar = ({ schedule, month }: ScheduleCalendarProps) => {
+  if (!schedule || schedule.length === 0) {
+    return (
+      <Card className="p-6">
+        <p className="text-muted-foreground text-center">No schedule data to display</p>
+      </Card>
+    );
+  }
+
   // Create a map of date to schedule for quick lookup
   const scheduleMap = new Map(
     schedule.map(day => [day.date, day])
   );
 
-  // Get the first and last dates
-  const firstDate = new Date(schedule[0].date);
-  const lastDate = new Date(schedule[schedule.length - 1].date);
+  // Parse month and year from the month prop (e.g., "January 2026")
+  const [monthName, yearStr] = month.split(' ');
+  const year = parseInt(yearStr) || new Date().getFullYear();
+  const monthNum = ['January', 'February', 'March', 'April', 'May', 'June', 
+                    'July', 'August', 'September', 'October', 'November', 'December']
+                    .indexOf(monthName);
   
-  // Calculate the calendar grid
-  const startOfMonth = new Date(firstDate.getFullYear(), firstDate.getMonth(), 1);
-  const endOfMonth = new Date(lastDate.getFullYear(), lastDate.getMonth() + 1, 0);
+  // Calculate the calendar grid for the specified month/year
+  const startOfMonth = new Date(year, monthNum, 1);
+  const endOfMonth = new Date(year, monthNum + 1, 0);
   
   // Find the first Sunday before or on the start of month
   const calendarStart = new Date(startOfMonth);
@@ -185,7 +196,7 @@ export const ScheduleCalendar = ({ schedule, month }: ScheduleCalendarProps) => 
           {calendarDates.map((date, idx) => {
             const dateStr = date.toISOString().split('T')[0];
             const daySchedule = scheduleMap.get(dateStr);
-            const isCurrentMonth = date.getMonth() === firstDate.getMonth();
+            const isCurrentMonth = date.getMonth() === monthNum;
             const isWeekend = date.getDay() === 0 || date.getDay() === 6;
             
             return (

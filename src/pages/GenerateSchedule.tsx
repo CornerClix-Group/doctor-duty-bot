@@ -30,7 +30,7 @@ export default function GenerateSchedule() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const [month, setMonth] = useState('January');
-  const [year, setYear] = useState(new Date().getFullYear());
+  const [year, setYear] = useState(2026);
   const [generating, setGenerating] = useState(false);
   const [uploadedData, setUploadedData] = useState<any>(null);
   const [generatedSchedule, setGeneratedSchedule] = useState<any>(null);
@@ -276,7 +276,7 @@ export default function GenerateSchedule() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {[2025, 2026, 2027].map(y => (
+                    {[2026, 2027].map(y => (
                       <SelectItem key={y} value={y.toString()}>{y}</SelectItem>
                     ))}
                   </SelectContent>
