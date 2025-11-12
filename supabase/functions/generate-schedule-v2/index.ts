@@ -9,9 +9,12 @@ const SYSTEM_PROMPT = `
 You are the Shift Pro Scheduling Engine (v2). Generate a COMPLETE monthly schedule that RESPECTS ALL PROVIDER CONSTRAINTS.
 
 CRITICAL INSTRUCTIONS - FOLLOW IN THIS EXACT ORDER:
-1. NEVER violate locked cells (cells with locked=true must keep their exact value)
+1. NEVER violate locked cells:
+   - If a provider has locked=true with value="X", "L", or "LH" for a date, that provider MUST be off that day (no shift assignment)
+   - If a provider has locked=true with value=<shift>, preserve that exact shift assignment
+   - Any assignment violating locked cells will cause immediate rejection
 2. NEVER assign providers to shifts they cannot work (check allowed_shifts and disallowed_shifts)
-3. FILL EVERY required shift with a qualified provider
+3. FILL EVERY required shift with a qualified provider (from providers who do NOT have X/L/LH on that date)
 4. RESPECT rest requirements (12-hour gaps, N-shift recovery)
 5. BALANCE workload to match target_shifts and weekend_quota
 
@@ -33,7 +36,10 @@ INPUT OBJECTS
 
 ASSIGNMENT STRATEGY:
 1. First pass: Preserve all locked cells exactly as provided
-2. Second pass: For each blank shift, identify ALL eligible providers who:
+   - If provider has locked=true with value="X"/"L"/"LH" on date D, SKIP that provider for date D entirely
+   - If provider has locked=true with value=<shift> on date D, preserve that exact assignment
+2. Second pass: For each blank shift on date D, identify ALL eligible providers who:
+   - Do NOT have locked=true with value="X"/"L"/"LH" on date D (they must be available)
    - Have that shift in allowed_shifts (or have empty allowed_shifts meaning all shifts allowed)
    - Do NOT have that shift in disallowed_shifts
    - Would not violate rest requirements if assigned
@@ -210,9 +216,11 @@ Return ONLY valid JSON conforming to the provided schema. Empty provider fields 
 
 VALIDATION CHECKLIST BEFORE RETURNING:
 1. Did I preserve all locked cells exactly?
+   - CRITICAL: If provider has locked X/L/LH on date D, I must NOT assign them ANY shift on date D
+   - If provider has locked shift on date D, I preserved that exact shift
 2. Did I only assign providers to shifts in their allowed_shifts (or all shifts if allowed_shifts is empty)?
 3. Did I avoid assigning providers to shifts in their disallowed_shifts?
-4. Did I assign a provider to every required shift?
+4. Did I assign a provider to every required shift (using only providers without X/L/LH on that date)?
 5. Do provider totals match their target_shifts (regular work only)?
 6. Do weekend totals match weekend_quota (regular work on Sat/Sun only)?
 7. Does each provider have 8 total assignments (regular+C+A10) per pay period?
@@ -365,13 +373,26 @@ serve(async (req) => {
       }
     }
 
+    console.log("[v2] Locked cells map:", Array.from(lockedMap.entries()).slice(0, 20));
+
     // Validate each day's assignments
     for (const daySchedule of data.schedule ?? []) {
       for (const assignment of daySchedule.assignments ?? []) {
+        if (!assignment.provider) continue; // Skip empty assignments
+        
         const key = `${daySchedule.date}|${assignment.provider}`;
         const locked = lockedMap.get(key);
-        if (locked && locked !== assignment.shift) {
-          lockedViolations.push(`${daySchedule.date} ${assignment.provider}: expected ${locked}, got ${assignment.shift}`);
+        
+        // If provider has a locked cell for this date
+        if (locked) {
+          // If locked value is X/L/LH, provider should NOT be assigned ANY shift
+          if (locked === 'X' || locked === 'L' || locked === 'LH') {
+            lockedViolations.push(`${daySchedule.date} ${assignment.provider}: has locked ${locked}, cannot assign ${assignment.shift}`);
+          }
+          // If locked value is a shift, it must match exactly
+          else if (locked !== assignment.shift) {
+            lockedViolations.push(`${daySchedule.date} ${assignment.provider}: expected ${locked}, got ${assignment.shift}`);
+          }
         }
       }
     }
