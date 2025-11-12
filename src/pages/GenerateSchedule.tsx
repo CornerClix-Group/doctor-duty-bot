@@ -4,10 +4,21 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
-import { Loader2, Sparkles, Calendar, Download } from 'lucide-react';
+import { Loader2, Sparkles, Calendar, Download, Trash2 } from 'lucide-react';
 import { ScheduleUpload } from '@/components/ScheduleUpload';
 import { ScheduleCalendar } from '@/components/ScheduleCalendar';
 import { ProviderStats } from '@/components/ProviderStats';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -125,6 +136,14 @@ export default function GenerateSchedule() {
     }
   };
 
+  const handleClearSchedule = () => {
+    setGeneratedSchedule(null);
+    toast({
+      title: 'Schedule Cleared',
+      description: 'The generated schedule has been cleared',
+    });
+  };
+
   return (
     <div className="min-h-screen bg-background p-6">
       <div className="max-w-6xl mx-auto space-y-6">
@@ -207,14 +226,42 @@ export default function GenerateSchedule() {
           </Button>
 
           {generatedSchedule && (
-            <Button
-              onClick={handleSaveSchedule}
-              variant="secondary"
-              size="lg"
-            >
-              <Download className="mr-2 h-5 w-5" />
-              Save Schedule
-            </Button>
+            <>
+              <Button
+                onClick={handleSaveSchedule}
+                variant="secondary"
+                size="lg"
+              >
+                <Download className="mr-2 h-5 w-5" />
+                Save Schedule
+              </Button>
+              
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button
+                    variant="destructive"
+                    size="lg"
+                  >
+                    <Trash2 className="mr-2 h-5 w-5" />
+                    Clear Schedule
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Clear Generated Schedule?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      This will remove the current generated schedule. You will need to generate a new schedule if you want to continue. This action cannot be undone.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction onClick={handleClearSchedule} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                      Clear Schedule
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            </>
           )}
         </div>
 
