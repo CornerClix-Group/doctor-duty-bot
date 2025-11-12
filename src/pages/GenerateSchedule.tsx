@@ -47,34 +47,51 @@ export default function GenerateSchedule() {
         .eq('active', true);
 
       if (providersError) throw providersError;
+      if (!providers || providers.length === 0) {
+        throw new Error('No active providers found. Please add providers first.');
+      }
 
-      // Format provider profiles for AI
-      const providerProfiles = providers.map(p => ({
-        id: p.id,
-        name: p.name,
-        email: p.email,
-        targetShifts: p.target_shifts,
-        weekendQuota: p.weekend_quota,
-        constraints: p.provider_constraints?.[0] || {}
-      }));
+      // Transform provider profiles to expected payload
+      const provider_profiles = providers.map((p: any) => {
+        const c = Array.isArray(p.provider_constraints) ? p.provider_constraints[0] : p.provider_constraints;
+        const [first_name, ...rest] = (p.name || '').split(' ');
+        return {
+          first_name: first_name || '',
+          last_name: rest.join(' '),
+          email: p.email || '',
+          role: 'provider',
+          allowed_shifts: c?.allowed_shifts || [],
+          rules: {
+            disallowed_shifts: c?.disallowed_shifts || [],
+            preferred_shifts: c?.preferred_shifts || [],
+            rest_hours: c?.rest_hours ?? 12,
+            n_recovery_days: c?.n_recovery_days ?? 2,
+            block_pattern: c?.block_pattern || null,
+            max_consecutive_N: c?.max_consecutive_n || null,
+            saturday_restrictions: c?.saturday_restrictions || null,
+            sunday_restrictions: c?.sunday_restrictions || null,
+          }
+        };
+      });
 
       console.log('Calling generate-schedule edge function...');
 
-      // Build schedule data in the format expected by the edge function
-      const scheduleData = {
+      // Use uploaded normalized data if available; otherwise build minimal skeleton
+      const schedule_data = uploadedData?.month ? uploadedData : {
         month: `${month} ${year}`,
-        providers: providerProfiles.map(p => ({
+        coverage_pattern: {},
+        providers: providers.map((p: any) => ({
           name: p.name,
-          target_shifts: p.targetShifts,
-          weekend_quota: p.weekendQuota
-        })),
-        days: uploadedData?.days || []
+          target_shifts: p.target_shifts,
+          weekend_quota: p.weekend_quota,
+          days: [] as any[]
+        }))
       };
 
       const { data, error } = await supabase.functions.invoke('generate-schedule', {
         body: {
-          providerProfiles,
-          scheduleData
+          provider_profiles,
+          schedule_data
         }
       });
 
@@ -84,6 +101,9 @@ export default function GenerateSchedule() {
         }
         if (error.message?.includes('402')) {
           throw new Error('AI credits exhausted. Please add credits to your workspace.');
+        }
+        if (error.message?.includes('Locked cell violation') || error.message?.includes('422')) {
+          throw new Error('Locked cell violation: the AI attempted to overwrite protected cells from the uploaded sheet.');
         }
         throw error;
       }
