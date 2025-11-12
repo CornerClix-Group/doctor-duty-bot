@@ -237,10 +237,13 @@ class DeterministicScheduler {
   }
 
   private fillSchedule() {
-    console.log("[CSP] Filling schedule with backtracking...");
+    console.log("[CSP] Filling schedule with backtracking search...");
     
     // Get all dates sorted
     const dates = Object.keys(this.scheduleData.coverage_pattern).sort();
+    
+    // Build list of all unfilled shift slots
+    const unfilledSlots: Array<{ date: string; shift: string; pattern: number }> = [];
     
     for (const date of dates) {
       const pattern = this.scheduleData.coverage_pattern[date];
@@ -253,21 +256,63 @@ class DeterministicScheduler {
         if (shift) assignedShifts.add(shift);
       }
       
-      // Fill remaining shifts
+      // Collect unfilled slots
       for (const shift of requiredShifts) {
-        if (assignedShifts.has(shift)) continue;
-        
-        const eligible = this.getEligibleProviders(date, shift, pattern);
-        
-        if (eligible.length === 0) {
-          this.warnings.push(`Shift ${shift} on ${date} could not be filled (no eligible providers)`);
-          continue;
+        if (!assignedShifts.has(shift)) {
+          unfilledSlots.push({ date, shift, pattern });
         }
-        
-        // Assign to best provider
-        this.assignShift(eligible[0], date, shift);
-        assignedShifts.add(shift);
       }
+    }
+    
+    console.log(`[CSP] Found ${unfilledSlots.length} unfilled slots, starting backtracking search...`);
+    
+    // Attempt backtracking search
+    const success = this.backtrackSearch(unfilledSlots, 0);
+    
+    if (!success) {
+      console.log("[CSP] Backtracking search exhausted - some shifts could not be filled");
+    } else {
+      console.log("[CSP] Backtracking search completed successfully");
+    }
+  }
+
+  private backtrackSearch(slots: Array<{ date: string; shift: string; pattern: number }>, slotIndex: number): boolean {
+    // Base case: all slots filled
+    if (slotIndex >= slots.length) {
+      return true;
+    }
+    
+    const { date, shift, pattern } = slots[slotIndex];
+    const eligible = this.getEligibleProviders(date, shift, pattern);
+    
+    // No eligible providers for this slot - backtrack
+    if (eligible.length === 0) {
+      this.warnings.push(`No eligible providers for ${shift} on ${date} - backtracking...`);
+      return false;
+    }
+    
+    // Try each eligible provider
+    for (const providerName of eligible) {
+      // Make assignment
+      this.assignShift(providerName, date, shift);
+      
+      // Recursively try to fill remaining slots
+      if (this.backtrackSearch(slots, slotIndex + 1)) {
+        return true; // Success!
+      }
+      
+      // Backtrack: undo this assignment
+      this.undoAssignment(providerName, date);
+    }
+    
+    // All providers tried and failed - backtrack further
+    return false;
+  }
+
+  private undoAssignment(providerName: string, date: string) {
+    const assignments = this.providerAssignments.get(providerName);
+    if (assignments) {
+      assignments.delete(date);
     }
   }
 
