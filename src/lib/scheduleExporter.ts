@@ -24,93 +24,80 @@ export function exportScheduleToExcel(
   originalData: ScheduleData,
   generatedSchedule: ExportSchedule
 ) {
-  // Create a new workbook
   const wb = XLSX.utils.book_new();
-  
-  // Calculate dimensions
-  const numDays = originalData.days.length;
-  const providerNames = Object.keys(originalData.providers);
-  const numRows = 5 + (providerNames.length * SHIFT_ORDER.length);
-  
-  // Create empty sheet data
   const sheetData: any[][] = [];
   
-  // Row 1: Title
-  sheetData[0] = [`${originalData.month} ${originalData.year} Schedule`];
+  // Row 1: Month and Pay Period labels
+  const row1 = [originalData.month];
+  originalData.days.forEach(day => {
+    row1.push(`PP${day.payPeriod}`);
+  });
+  row1.push('Target Total Shifts');
+  sheetData[0] = row1;
   
-  // Row 2: Pattern numbers (starting from column C)
-  sheetData[1] = ['', '', ...originalData.days.map(day => day.pattern)];
+  // Row 2: Pattern numbers
+  const row2 = ['Pattern'];
+  originalData.days.forEach(day => row2.push(String(day.pattern)));
+  row2.push('');
+  sheetData[1] = row2;
   
-  // Row 3: Day of week (starting from column C)
-  sheetData[2] = ['', '', ...originalData.days.map(day => day.dayOfWeek)];
+  // Row 3: Day of week
+  const row3 = ['Day'];
+  originalData.days.forEach(day => row3.push(day.dayOfWeek));
+  row3.push('');
+  sheetData[2] = row3;
   
-  // Row 4: Dates (starting from column C)
-  sheetData[3] = ['Provider', 'Shift', ...originalData.days.map(day => {
-    const date = new Date(day.date);
-    return date.getDate();
-  })];
+  // Row 4: Dates
+  const row4 = ['Date'];
+  originalData.days.forEach(day => {
+    const date = new Date(day.date + 'T00:00:00');
+    row4.push(String(date.getDate()));
+  });
+  row4.push('');
+  sheetData[3] = row4;
   
-  // Build assignment map for quick lookup
+  // Build assignment map: date -> provider -> shift
   const assignmentMap = new Map<string, Map<string, string>>();
   generatedSchedule.schedule.forEach(daySchedule => {
     const dayMap = new Map<string, string>();
     daySchedule.assignments.forEach(assignment => {
-      dayMap.set(assignment.shift, assignment.provider);
+      dayMap.set(assignment.provider, assignment.shift);
     });
     assignmentMap.set(daySchedule.date, dayMap);
   });
   
-  // Rows 5+: Provider shifts
-  let currentRow = 4;
-  providerNames.forEach((providerName, providerIndex) => {
-    SHIFT_ORDER.forEach((shiftType, shiftIndex) => {
-      const row: any[] = [];
-      
-      // Column A: Provider name (only on first shift row)
-      row[0] = shiftIndex === 0 ? providerName : '';
-      
-      // Column B: Shift name
-      row[1] = shiftType;
-      
-      // Columns C+: Assignments for each day
-      originalData.days.forEach(day => {
-        const dayMap = assignmentMap.get(day.date);
-        const assignedProvider = dayMap?.get(shiftType);
-        
-        // Check if this cell was blocked in original data
-        const originalShift = day.shifts[shiftType];
-        if (originalShift && ['X', 'L', 'HL'].includes(originalShift)) {
-          row.push(originalShift);
-        } else if (originalShift && originalShift !== '' && !['X', 'L', 'HL'].includes(originalShift)) {
-          // Pre-assigned shift from original
-          row.push(originalShift);
-        } else if (assignedProvider === providerName) {
-          // This provider was assigned this shift
-          row.push(providerName);
-        } else {
-          row.push('');
-        }
-      });
-      
-      sheetData[currentRow] = row;
-      currentRow++;
-    });
-  });
-  
-  // Add summary section
-  currentRow += 2;
-  sheetData[currentRow] = ['Provider', 'Worked', 'Target', 'Weekends', 'Weekend Quota'];
-  currentRow++;
-  
-  Object.entries(generatedSchedule.provider_totals).forEach(([provider, totals]) => {
-    sheetData[currentRow] = [
-      provider,
-      totals.worked,
-      totals.target,
-      totals.weekends,
-      totals.weekendQuota
+  // Row 5+: Provider rows (ONE ROW PER PROVIDER)
+  const providerNames = Object.keys(originalData.providers);
+  providerNames.forEach(providerName => {
+    const provider = originalData.providers[providerName];
+    const row = [
+      providerName,
+      provider.weekendQuota
     ];
-    currentRow++;
+    
+    // Add daily assignments
+    originalData.days.forEach(day => {
+      // Check for locked cells first (highest priority)
+      if (provider.lockedCells && provider.lockedCells[day.date]) {
+        row.push(provider.lockedCells[day.date]);
+        return;
+      }
+      
+      // Check if provider was assigned a shift on this day
+      const dayMap = assignmentMap.get(day.date);
+      const assignedShift = dayMap?.get(providerName);
+      
+      if (assignedShift) {
+        row.push(assignedShift);
+      } else {
+        row.push('');
+      }
+    });
+    
+    // Add target total shifts
+    row.push(provider.targetShifts);
+    
+    sheetData.push(row);
   });
   
   // Create worksheet
@@ -119,16 +106,12 @@ export function exportScheduleToExcel(
   // Set column widths
   ws['!cols'] = [
     { wch: 15 }, // Provider
-    { wch: 10 }, // Shift
-    ...Array(numDays).fill({ wch: 8 }) // Days
+    { wch: 12 }, // Weekend Quota
+    ...Array(originalData.days.length).fill({ wch: 6 }), // Days
+    { wch: 15 }  // Target Total Shifts
   ];
   
-  // Add worksheet to workbook
   XLSX.utils.book_append_sheet(wb, ws, 'Schedule');
-  
-  // Generate filename
-  const filename = `${originalData.month}_${originalData.year}_Generated_Schedule.xlsx`;
-  
-  // Write file
+  const filename = `${originalData.month}_${originalData.year}_Generated.xlsx`;
   XLSX.writeFile(wb, filename);
 }

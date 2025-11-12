@@ -43,6 +43,7 @@ export interface GeneratedSchedule {
   schedule: {
     date: string;
     pattern: number;
+    pay_period: number;
     assignments: {
       shift: string;
       provider: string;
@@ -52,8 +53,16 @@ export interface GeneratedSchedule {
     [providerName: string]: {
       worked: number;
       weekends: number;
+      call: number;
+      admin: number;
       target?: number;
+      weekend_quota?: number;
       weekendQuota?: number;
+    };
+  };
+  pay_period_totals?: {
+    [providerName: string]: {
+      [ppKey: string]: number;
     };
   };
   warnings?: string[];

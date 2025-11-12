@@ -25,23 +25,96 @@ INPUT OBJECTS
     ]
   }
 
-SHIFT DEFINITIONS (10 h)
-D1 06:00–16:00; FT AM 07:00–17:00; D2 08:00–18:00; MIDA 11:00–21:00;
-FT PM 14:00–00:00; MIDB 15:00–01:00; E 17:00–03:00; N 22:00–08:00; FT W 10:00–20:00
+SHIFT DEFINITIONS (PATTERN-DEPENDENT):
+
+Pattern 7 (10-hour shifts):
+- D1: 06:00-16:00
+- D2: 08:00-18:00
+- MIDA (MID1): 11:00-21:00
+- MIDB (MID2): 14:00-00:00
+- E: 16:00-02:00
+- N: 21:00-07:00
+- FT W: weekend coverage
+- FT W12: 12:00-22:00 (Sundays only)
+
+Pattern 8 (9-hour shifts):
+- D1: 06:00-15:00
+- D2: 08:00-17:00
+- MIDA (MID1): 11:00-20:00
+- MIDB (MID2): 15:00-00:00
+- E: 17:00-02:00
+- N: 22:00-07:00
+- FT AM: morning coverage
+- FT PM: evening coverage
+
+SPECIAL SHIFT TYPES:
+
+C (Call Shift):
+- Hours: 06:00-22:00 (must be available)
+- Counts toward Pay Period total of 8
+- Does NOT count toward weekend quota
+- Does NOT count toward target total shifts
+- NEVER scheduled on weekends (Saturday/Sunday)
+- Follows 12-hour rest rule (must have 12 hours before/after)
+
+A10 (Admin Shift):
+- Counts toward Pay Period total of 8
+- Does NOT count toward weekend quota
+- Does NOT count toward target total shifts
+- NEVER scheduled on weekends (Saturday/Sunday)
 
 COVERAGE BY PATTERN
-If 7 → {D1, D2, MIDA, MIDB, E, N, FT W}
+If 7 → {D1, D2, MIDA, MIDB, E, N, FT W} (and FT W12 on Sundays)
 If 8 → {D1, D2, MIDA, MIDB, E, N, FT AM, FT PM}
 Each required shift appears exactly once per day. Max 1 shift per provider per day.
 
-GLOBAL RULES
-- ≥12h rest between any two shifts.
-- After N: 2 full days off before any non-N shift.
-- Match each provider's target_shifts exactly.
-- Match weekend_quota (Sat+Sun) exactly if possible; otherwise ±1 only if unavoidable.
-- Respect allowed/disallowed constraints.
+HARD CONSTRAINTS (MUST BE SATISFIED):
 
-PROVIDER-SPECIFIC RULES
+1. Target Total Shifts (from Column AI):
+   - Each provider MUST work exactly their target_shifts number
+   - Count ONLY regular work shifts (D1, D2, MIDA, MIDB, E, N, FT types)
+   - EXCLUDE: C, A10, X, L, LH from this count
+
+2. Weekend Quota (from Column B):
+   - Each provider MUST work exactly their weekend_quota number on weekends
+   - Count ONLY regular work shifts on Saturday/Sunday
+   - EXCLUDE: C, A10, X, L, LH from this count
+   - Weekend grouping preferences:
+     * Quota 2: Both on same weekend (Saturday + Sunday together)
+     * Quota 3: Group as 2+1 (one full weekend + one separate day)
+     * Quota 4: Group as 2+2 (two full weekends)
+
+3. Pay Period Constraint:
+   - Each provider MUST have exactly 8 total assignments per pay period
+   - Count INCLUDES: regular shifts + C + A10
+   - Each PP spans exactly 14 days
+   - Federal government 26 two-week pay period system
+
+4. Rest Requirements:
+   - Minimum 12 hours between shifts
+   - After N (Night) shift: provider requires at least 2 full days off before any non-N shift
+   - C and A10 follow 12-hour rest rule
+
+5. Locked Cells:
+   - NEVER overwrite cells marked: X, L, LH, or pre-assigned shifts
+   - X and L count as true rest days for recovery calculations
+   - LH (Holiday) is protected
+   - Preserve all locked entries in output
+
+6. Daily Constraint Codes:
+   - If a date has constraint code (e.g., "1/x"), provider can ONLY be assigned shifts listed
+   - "1/x" = only D1 or off
+   - "5/10/x" = only E or N or off
+   - "1/2/Amx" = only D1, D2, FT AM, or off
+   - If blank/X is the only option per constraint, leave provider off that day
+
+7. Weekend Restrictions for C and A10:
+   - C shifts: NEVER on Saturday or Sunday
+   - A10 shifts: NEVER on Saturday or Sunday
+
+8. Respect allowed/disallowed constraints from provider_profiles
+
+PROVIDER-SPECIFIC RULES (from provider_profiles)
 - Coffin → N only; blocks of 3–4 N; then ≥2 days off; no other shifts.
 - Cary → All except D1; prefers MIDB→E→N; ≤4 N in a row.
 - Venugopal → E only; ≤2 E in a row; ≥2 days off after E run.
@@ -53,27 +126,55 @@ PROVIDER-SPECIFIC RULES
 - Akers → All except "C".
 - D1 eligibility priority: Lopez > Arnett > Beres/Illston/Freeman/Ferguson/Jones > others.
 
-LOCKED CELLS & HOLIDAYS
-- Never overwrite any pre-existing shift, X, L, or HL from schedule_data.providers[].days[].
-- Treat X/L/HL as locked rest/leave/holiday; count them for spacing; do NOT count them as worked shifts.
-- If a day is HL, leave unscheduled unless a shift is pre-assigned.
-- Preserve locked entries in output (use "shift":"HL" or "X"/"L" with the same date if present).
-- If locks create gaps, fill with eligible providers without violating rules.
+IMPOSSIBLE CONSTRAINTS HANDLING:
+
+If constraints cannot all be satisfied:
+- Get as close as possible to all targets
+- Prioritize in this order:
+  1. Locked cells (never violate)
+  2. Daily constraint codes (never violate)
+  3. Rest requirements (12 hours, N recovery)
+  4. Target total shifts (try to match exactly)
+  5. Weekend quota (try to match exactly)
+  6. Pay Period totals (try to match 8)
+- Can reduce days off (change X to a shift) if needed to meet targets
+- Return detailed error/warning explaining what couldn't be met
 
 OUTPUT (JSON only, no prose)
 {
   "month": "Month YYYY",
   "schedule": [
-    { "date": "YYYY-MM-DD", "shift": "D1|D2|MIDA|MIDB|E|N|FT AM|FT PM|FT W|HL|X|L", "provider": "First Last or '' for HL" }
+    {
+      "date": "YYYY-MM-DD",
+      "pattern": 7|8,
+      "pay_period": 1-14,
+      "assignments": [
+        { "shift": "D1|D2|MIDA|MIDB|E|N|FT AM|FT PM|FT W|FT W12|C|A10|LH|X|L", "provider": "First Last or '' for LH/X/L" }
+      ]
+    }
   ],
-  "provider_totals": [
-    { "provider": "First Last", "total": <number>, "weekend": <number> }
-  ],
-  "notes": [ "...optional reasons for any unfilled shift..." ]
+  "provider_totals": {
+    "First Last": {
+      "worked": <number>,           // Regular shifts only
+      "weekends": <number>,         // Weekend regular shifts only
+      "call": <number>,             // C shifts
+      "admin": <number>,            // A10 shifts
+      "target": <number>,           // From Column AI
+      "weekend_quota": <number>     // From Column B
+    }
+  },
+  "pay_period_totals": {
+    "First Last": {
+      "PP1": 8,  // Must equal 8 (regular + C + A10)
+      "PP2": 8,
+      ...
+    }
+  },
+  "warnings": ["...optional reasons for any unfilled shift or constraint violation..."]
 }
 
 ENFORCEMENT
-All constraints are hard. If a shift cannot be assigned without violating a rule, leave it unfilled and explain once in "notes".
+All constraints are hard. If a shift cannot be assigned without violating a rule, leave it unfilled and explain once in "warnings".
 Return ONLY valid JSON conforming to the provided schema.
 `;
 
@@ -89,27 +190,49 @@ const OUTPUT_SCHEMA = {
           type: "object",
           properties: {
             date: { type: "string" },
-            shift: { type: "string" },
-            provider: { type: "string" }
+            pattern: { type: "number" },
+            pay_period: { type: "number" },
+            assignments: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  shift: { type: "string" },
+                  provider: { type: "string" }
+                },
+                required: ["shift", "provider"],
+                additionalProperties: false
+              }
+            }
           },
-          required: ["date", "shift", "provider"],
+          required: ["date", "pattern", "pay_period", "assignments"],
           additionalProperties: false
         }
       },
       provider_totals: {
-        type: "array",
-        items: {
+        type: "object",
+        additionalProperties: {
           type: "object",
           properties: {
-            provider: { type: "string" },
-            total: { type: "number" },
-            weekend: { type: "number" }
+            worked: { type: "number" },
+            weekends: { type: "number" },
+            call: { type: "number" },
+            admin: { type: "number" },
+            target: { type: "number" },
+            weekend_quota: { type: "number" }
           },
-          required: ["provider", "total", "weekend"],
+          required: ["worked", "weekends", "call", "admin", "target", "weekend_quota"],
           additionalProperties: false
         }
       },
-      notes: { type: "array", items: { type: "string" } }
+      pay_period_totals: {
+        type: "object",
+        additionalProperties: {
+          type: "object",
+          additionalProperties: { type: "number" }
+        }
+      },
+      warnings: { type: "array", items: { type: "string" } }
     },
     required: ["month", "schedule", "provider_totals"],
     additionalProperties: false
@@ -169,6 +292,7 @@ serve(async (req) => {
     const lockedMap = new Map<string, string>();
     
     for (const p of schedule_data.providers) {
+      if (!p.name) continue;
       for (const d of p.days ?? []) {
         if (d.locked && d.value) {
           lockedMap.set(`${d.date}|${p.name}`, d.value);
@@ -176,11 +300,14 @@ serve(async (req) => {
       }
     }
     
-    for (const row of data.schedule ?? []) {
-      const key = `${row.date}|${row.provider}`;
-      const locked = lockedMap.get(key);
-      if (locked && locked !== row.shift) {
-        lockedViolations.push(`${row.date} ${row.provider}: expected ${locked}, got ${row.shift}`);
+    // Validate each day's assignments
+    for (const daySchedule of data.schedule ?? []) {
+      for (const assignment of daySchedule.assignments ?? []) {
+        const key = `${daySchedule.date}|${assignment.provider}`;
+        const locked = lockedMap.get(key);
+        if (locked && locked !== assignment.shift) {
+          lockedViolations.push(`${daySchedule.date} ${assignment.provider}: expected ${locked}, got ${assignment.shift}`);
+        }
       }
     }
     

@@ -241,10 +241,8 @@ export type Database = {
           role: string | null
           saturday_restrictions: string | null
           sunday_restrictions: string | null
-          target_shifts: number | null
           updated_at: string | null
           user_id: string | null
-          weekend_quota: number | null
         }
         Insert: {
           allowed_shifts?: string[] | null
@@ -260,10 +258,8 @@ export type Database = {
           role?: string | null
           saturday_restrictions?: string | null
           sunday_restrictions?: string | null
-          target_shifts?: number | null
           updated_at?: string | null
           user_id?: string | null
-          weekend_quota?: number | null
         }
         Update: {
           allowed_shifts?: string[] | null
@@ -279,10 +275,8 @@ export type Database = {
           role?: string | null
           saturday_restrictions?: string | null
           sunday_restrictions?: string | null
-          target_shifts?: number | null
           updated_at?: string | null
           user_id?: string | null
-          weekend_quota?: number | null
         }
         Relationships: []
       }
