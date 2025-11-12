@@ -30,6 +30,7 @@ const getShiftColor = (shift: string, pattern: number = 7): string => {
       'E': 'bg-violet-600 text-white',
       'N': 'bg-slate-700 text-white',
       'FT W': 'bg-lime-600 text-white',
+      'FT W12': 'bg-green-700 text-white',
     };
     return colors[shift] || 'bg-muted text-muted-foreground';
   } else {
@@ -61,6 +62,7 @@ const getShiftTime = (shift: string, pattern: number): string => {
       'E': '4p-2a',
       'N': '9p-7a',
       'FT W': '10a-8p',
+      'FT W12': '12p-10p',
     };
     return times[shift] || '';
   } else {
@@ -199,7 +201,7 @@ export const ScheduleCalendar = ({ schedule, month }: ScheduleCalendarProps) => 
         <div className="space-y-4">
           <div>
             <h4 className="text-xs font-medium text-muted-foreground mb-2">Pattern 7 (10-hour shifts)</h4>
-            <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-8 gap-2">
               {[
                 { code: 'D1', time: '6a-4p' },
                 { code: 'D2', time: '8a-6p' },
@@ -208,12 +210,15 @@ export const ScheduleCalendar = ({ schedule, month }: ScheduleCalendarProps) => 
                 { code: 'E', time: '4p-2a' },
                 { code: 'N', time: '9p-7a' },
                 { code: 'FT W', time: '10a-8p' },
+                { code: 'FT W12', time: '12p-10p', note: '(Sun)' },
               ].map(shift => (
                 <div key={shift.code} className="text-center">
                   <Badge className={`${getShiftColor(shift.code, 7)} justify-center w-full mb-1`}>
                     {shift.code}
                   </Badge>
-                  <div className="text-xs text-muted-foreground">{shift.time}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {shift.time} {shift.note && <span className="text-[10px]">{shift.note}</span>}
+                  </div>
                 </div>
               ))}
             </div>

@@ -48,6 +48,7 @@ Each day in the schedule has a coverage pattern defined by Row 2 of the spreadsh
 
 PATTERN 7 (7 shifts, 10 hours each):
 Required shifts: D1, D2, MID1, MID2, E, N, FT W
+On Sundays (Pattern 7): D1, D2, MID1, MID2, E, N, FT W12
 Shift times:
 - D1: 06:00–16:00 (6a to 4p)
 - D2: 08:00–18:00 (8a to 6p)
@@ -56,6 +57,7 @@ Shift times:
 - E: 16:00–02:00 (4p to 2a)
 - N: 21:00–07:00 (9p to 7a)
 - FT W: 10:00–20:00 (10a to 8p)
+- FT W12: 12:00–22:00 (12p to 10p) - SUNDAYS ONLY
 
 PATTERN 8 (8 shifts, 9 hours each):
 Required shifts: D1, D2, MID1, MID2, E, N, FT AM, FT PM
