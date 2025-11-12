@@ -358,7 +358,46 @@ serve(async (req) => {
 
     const responseData = await response.json();
     const raw = responseData.choices[0]?.message?.content ?? "{}";
-    const data = JSON.parse(raw);
+    
+    console.log("[v2] Raw AI response length:", raw.length);
+    console.log("[v2] Raw AI response first 500 chars:", raw.substring(0, 500));
+    console.log("[v2] Raw AI response last 500 chars:", raw.substring(raw.length - 500));
+    
+    // Try to extract JSON if AI included extra text
+    let jsonStr = raw.trim();
+    
+    // Look for JSON object boundaries
+    const firstBrace = jsonStr.indexOf('{');
+    const lastBrace = jsonStr.lastIndexOf('}');
+    
+    if (firstBrace === -1 || lastBrace === -1 || firstBrace >= lastBrace) {
+      console.error("[v2] No valid JSON object boundaries found");
+      return new Response(
+        JSON.stringify({ error: "AI response does not contain valid JSON" }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+    
+    // Extract just the JSON part
+    if (firstBrace > 0 || lastBrace < jsonStr.length - 1) {
+      console.log("[v2] Extracting JSON from position", firstBrace, "to", lastBrace + 1);
+      jsonStr = jsonStr.substring(firstBrace, lastBrace + 1);
+    }
+    
+    let data;
+    try {
+      data = JSON.parse(jsonStr);
+    } catch (parseError: any) {
+      console.error("[v2] JSON parse error:", parseError.message);
+      console.error("[v2] Attempted to parse:", jsonStr.substring(0, 1000));
+      return new Response(
+        JSON.stringify({ 
+          error: "Failed to parse AI response as JSON",
+          details: parseError.message 
+        }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
 
     // Server-side validation: check locked cells
     const lockedViolations: string[] = [];
