@@ -1,10 +1,11 @@
 import { useCallback, useState } from 'react';
-import { Upload, FileSpreadsheet, AlertCircle } from 'lucide-react';
+import { Upload, FileSpreadsheet, AlertCircle, Download } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import * as XLSX from 'xlsx';
 import { parseScheduleData } from '@/lib/scheduleParser';
+import { generateScheduleTemplate } from '@/lib/scheduleTemplateGenerator';
 
 interface ScheduleUploadProps {
   onScheduleLoad: (data: any) => void;
@@ -68,6 +69,17 @@ export const ScheduleUpload = ({ onScheduleLoad }: ScheduleUploadProps) => {
 
   return (
     <div className="space-y-4">
+      <div className="flex justify-end mb-4">
+        <Button 
+          variant="outline" 
+          onClick={() => generateScheduleTemplate()}
+          type="button"
+        >
+          <Download className="mr-2 h-4 w-4" />
+          Download Template
+        </Button>
+      </div>
+      
       <Card
         className={`relative p-12 border-2 border-dashed transition-all ${
           isDragging 
