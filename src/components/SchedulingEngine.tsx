@@ -28,53 +28,34 @@ export const SchedulingEngine = ({ scheduleData, onScheduleGenerated }: Scheduli
     setGeneratedResult(null);
 
     try {
-      // Fetch provider profiles from the database
-      const { data: providersData, error: providersError } = await supabase
-        .from('providers')
-        .select(`
-          *,
-          provider_constraints (*),
-          provider_blocked_days (*)
-        `)
-        .eq('active', true);
+      // Fetch provider profiles from database
+      const { data: provider_profiles, error: profileError } = await supabase
+        .from('provider_profiles')
+        .select('*');
 
-      if (providersError) {
-        throw new Error(`Failed to fetch providers: ${providersError.message}`);
+      if (profileError) {
+        throw new Error(`Failed to fetch provider profiles: ${profileError.message}`);
       }
 
-      // Transform providers data into the format expected by the edge function
-      const providerProfiles = providersData?.map((provider: any) => ({
-        first_name: provider.name.split(' ')[0],
-        last_name: provider.name.split(' ').slice(1).join(' '),
-        email: provider.email || '',
-        allowed_shifts: provider.provider_constraints?.[0]?.allowed_shifts || [],
-        rules: {
-          disallowed_shifts: provider.provider_constraints?.[0]?.disallowed_shifts || [],
-          preferred_shifts: provider.provider_constraints?.[0]?.preferred_shifts || [],
-          rest_hours: provider.provider_constraints?.[0]?.rest_hours || 12,
-          n_recovery_days: provider.provider_constraints?.[0]?.n_recovery_days || 2,
-          block_pattern: provider.provider_constraints?.[0]?.block_pattern || null,
-          max_consecutive_N: provider.provider_constraints?.[0]?.max_consecutive_n || null,
-          saturday_restrictions: provider.provider_constraints?.[0]?.saturday_restrictions || null,
-          sunday_restrictions: provider.provider_constraints?.[0]?.sunday_restrictions || null,
-        }
-      })) || [];
+      if (!provider_profiles || provider_profiles.length === 0) {
+        throw new Error("No provider profiles found. Please add providers first.");
+      }
 
       console.log('Calling generate-schedule edge function with:', {
-        providerProfiles,
-        scheduleData
+        provider_profiles,
+        schedule_data: scheduleData
       });
 
-      // Call the edge function
+      // Call the edge function with exact parameter names
       const { data, error } = await supabase.functions.invoke('generate-schedule', {
         body: {
-          providerProfiles,
-          scheduleData
+          provider_profiles,
+          schedule_data: scheduleData
         }
       });
 
       if (error) {
-        if (error.message.includes('Rate limit')) {
+        if (error.message.includes('Rate limit') || error.message.includes('429')) {
           toast({
             title: "Rate Limit Exceeded",
             description: "Please wait a moment and try again.",
@@ -82,13 +63,22 @@ export const SchedulingEngine = ({ scheduleData, onScheduleGenerated }: Scheduli
           });
           throw new Error("Rate limit exceeded");
         }
-        if (error.message.includes('credits') || error.message.includes('Payment required')) {
+        if (error.message.includes('credits') || error.message.includes('Payment required') || error.message.includes('402')) {
           toast({
             title: "AI Credits Exhausted",
             description: "Please add credits to continue generating schedules.",
             variant: "destructive"
           });
           throw new Error("AI credits exhausted");
+        }
+        if (error.message.includes('Locked cell violation') || error.message.includes('422')) {
+          const details = data?.details ? ` Details: ${data.details.join(', ')}` : '';
+          toast({
+            title: "Locked Cell Violation",
+            description: `The AI attempted to overwrite protected cells.${details}`,
+            variant: "destructive"
+          });
+          throw new Error("Locked cell violation detected");
         }
         throw error;
       }

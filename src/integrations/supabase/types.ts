@@ -226,6 +226,66 @@ export type Database = {
           },
         ]
       }
+      provider_profiles: {
+        Row: {
+          allowed_shifts: string[] | null
+          block_pattern: string | null
+          created_at: string | null
+          email: string
+          first_name: string
+          id: string
+          last_name: string
+          n_recovery_days: number | null
+          preferred_shifts: string[] | null
+          rest_hours: number | null
+          role: string | null
+          saturday_restrictions: string | null
+          sunday_restrictions: string | null
+          target_shifts: number | null
+          updated_at: string | null
+          user_id: string | null
+          weekend_quota: number | null
+        }
+        Insert: {
+          allowed_shifts?: string[] | null
+          block_pattern?: string | null
+          created_at?: string | null
+          email: string
+          first_name: string
+          id?: string
+          last_name: string
+          n_recovery_days?: number | null
+          preferred_shifts?: string[] | null
+          rest_hours?: number | null
+          role?: string | null
+          saturday_restrictions?: string | null
+          sunday_restrictions?: string | null
+          target_shifts?: number | null
+          updated_at?: string | null
+          user_id?: string | null
+          weekend_quota?: number | null
+        }
+        Update: {
+          allowed_shifts?: string[] | null
+          block_pattern?: string | null
+          created_at?: string | null
+          email?: string
+          first_name?: string
+          id?: string
+          last_name?: string
+          n_recovery_days?: number | null
+          preferred_shifts?: string[] | null
+          rest_hours?: number | null
+          role?: string | null
+          saturday_restrictions?: string | null
+          sunday_restrictions?: string | null
+          target_shifts?: number | null
+          updated_at?: string | null
+          user_id?: string | null
+          weekend_quota?: number | null
+        }
+        Relationships: []
+      }
       providers: {
         Row: {
           active: boolean
