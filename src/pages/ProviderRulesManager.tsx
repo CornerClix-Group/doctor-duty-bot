@@ -256,22 +256,20 @@ export default function ProviderRulesManager() {
             </div>
           </div>
           <div className="flex gap-2">
-            {modifiedProviders.size > 0 && (
-              <Button 
-                onClick={handleSaveAll} 
-                disabled={savingAll}
-                size="lg"
-              >
-                {savingAll ? (
-                  <>Saving All...</>
-                ) : (
-                  <>
-                    <SaveAll className="mr-2 h-5 w-5" />
-                    Save All ({modifiedProviders.size})
-                  </>
-                )}
-              </Button>
-            )}
+            <Button 
+              onClick={handleSaveAll} 
+              disabled={modifiedProviders.size === 0 || savingAll}
+              size="lg"
+            >
+              {savingAll ? (
+                <>Saving All...</>
+              ) : (
+                <>
+                  <SaveAll className="mr-2 h-5 w-5" />
+                  Save All ({modifiedProviders.size})
+                </>
+              )}
+            </Button>
             <Button variant="outline" onClick={() => navigate('/')} size="lg">
               <ArrowLeft className="mr-2 h-5 w-5" />
               Back to Home
