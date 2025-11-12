@@ -6,7 +6,10 @@ import { Users, TrendingUp, Calendar } from 'lucide-react';
 interface ProviderTotals {
   worked: number;
   weekends: number;
+  call?: number;
+  admin?: number;
   target?: number;
+  weekend_quota?: number;
   weekendQuota?: number;
 }
 
@@ -33,8 +36,9 @@ export const ProviderStats = ({ providerTotals }: ProviderStatsProps) => {
             const targetProgress = stats.target 
               ? (stats.worked / stats.target) * 100 
               : 100;
-            const weekendProgress = stats.weekendQuota
-              ? (stats.weekends / stats.weekendQuota) * 100
+            const quota = stats.weekend_quota ?? stats.weekendQuota ?? 0;
+            const weekendProgress = quota
+              ? (stats.weekends / quota) * 100
               : 100;
 
             return (
@@ -65,12 +69,12 @@ export const ProviderStats = ({ providerTotals }: ProviderStatsProps) => {
                   </div>
                 )}
 
-                {stats.weekendQuota && (
+                {quota > 0 && (
                   <div className="space-y-1">
                     <div className="flex items-center justify-between text-xs">
                       <span className="text-muted-foreground">Weekend quota</span>
                       <span className="font-medium">
-                        {stats.weekends} / {stats.weekendQuota}
+                        {stats.weekends} / {quota}
                       </span>
                     </div>
                     <Progress value={weekendProgress} className="h-2" />

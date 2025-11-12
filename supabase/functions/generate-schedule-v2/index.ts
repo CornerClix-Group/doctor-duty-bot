@@ -41,10 +41,14 @@ ASSIGNMENT STRATEGY:
 4. Final pass: Balance totals by swapping assignments where possible
 
 PROVIDER CONSTRAINT EXAMPLES (MUST BE ENFORCED):
-- Coffin: allowed_shifts=["N"] means ONLY Night shifts, NEVER D1/D2/MIDA/MIDB/E/FT
-- Cary: disallowed_shifts=["D1"] means can work D2/MIDA/MIDB/E/N/FT but NEVER D1
-- Lopez: allowed_shifts=["D1","FT AM"] means ONLY D1 or FT AM, NEVER any other shift
-- Ryals/Campo-Ford: allowed_shifts=["FT AM","FT PM","FT W","MIDA"] means ONLY those 4, nothing else
+- Coffin: allowed_shifts=["N"] means ONLY Night shifts in blocks of 3-4 consecutive N shifts, then MINIMUM 4 days off before next N block
+- Cary: disallowed_shifts=["D1"] means can work D2/MIDA/MIDB/E/N/FT but NEVER D1; prefers MIDB→E→N; max 4 consecutive N shifts
+- Lopez: allowed_shifts=["D1","FT AM"] means ONLY D1 or FT AM, max 2 consecutive shifts total, NEVER N
+- Venugopal: allowed_shifts=["E"] means ONLY E shifts, max 2 consecutive E, then minimum 2 days off
+- Orlando/Beckman: disallowed_shifts=["N"] means ANY shift EXCEPT N
+- Ryals/Campo-Ford/Sellars-Pompey: allowed_shifts=["FT AM","FT PM","FT W","MIDA"] means ONLY those 4, nothing else
+- Arnett: No E/N on Saturday; on Sunday only MIDB/E/N allowed; avoid Sunday if possible
+- Beach: Avoid Sunday if possible; if must work Sunday then only MIDB/E/N
 
 CONSTRAINT INTERPRETATION:
 - allowed_shifts = [] (empty) → Provider CAN work ALL shifts (no restrictions)
@@ -173,16 +177,16 @@ OUTPUT (JSON only, no prose)
       ]
     }
   ],
-  "provider_totals": {
-    "First Last": {
-      "worked": <number>,           // Regular shifts only
-      "weekends": <number>,         // Weekend regular shifts only
-      "call": <number>,             // C shifts
-      "admin": <number>,            // A10 shifts
-      "target": <number>,           // From Column AI
-      "weekend_quota": <number>     // From Column B
-    }
-  },
+      "provider_totals": {
+        "First Last": {
+          "worked": <number>,           // ONLY regular work shifts (D1,D2,MIDA,MIDB,E,N,FT types)
+          "weekends": <number>,         // ONLY weekend regular shifts (Saturday/Sunday)
+          "call": <number>,             // C shifts
+          "admin": <number>,            // A10 shifts
+          "target": <number>,           // From schedule_data providers[].target_shifts
+          "weekend_quota": <number>     // From schedule_data providers[].weekend_quota
+        }
+      },
   "pay_period_totals": {
     "First Last": {
       "PP1": 8,  // Must equal 8 (regular + C + A10)
