@@ -1,5 +1,4 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import OpenAI from "https://esm.sh/openai@4.77.3";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -248,9 +247,9 @@ serve(async (req) => {
   try {
     const { provider_profiles, schedule_data } = await req.json();
     
-    const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
-    if (!OPENAI_API_KEY) {
-      throw new Error("OPENAI_API_KEY is not configured");
+    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+    if (!LOVABLE_API_KEY) {
+      throw new Error("LOVABLE_API_KEY is not configured");
     }
 
     // Validate inputs
@@ -267,24 +266,49 @@ serve(async (req) => {
       );
     }
 
-    console.log("Calling OpenAI for schedule generation...");
+    console.log("Calling Lovable AI for schedule generation...");
 
-    const client = new OpenAI({ apiKey: OPENAI_API_KEY });
-
-    const response = await client.chat.completions.create({
-      model: "gpt-4.1-mini",
-      messages: [
-        { role: "system", content: SYSTEM_PROMPT },
-        {
-          role: "user",
-          content: JSON.stringify({ provider_profiles, schedule_data })
-        }
-      ],
-      temperature: 0.2,
-      response_format: { type: "json_schema", json_schema: OUTPUT_SCHEMA }
+    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${LOVABLE_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "google/gemini-2.5-flash",
+        messages: [
+          { role: "system", content: SYSTEM_PROMPT },
+          {
+            role: "user",
+            content: JSON.stringify({ provider_profiles, schedule_data })
+          }
+        ],
+        response_format: { type: "json_schema", json_schema: OUTPUT_SCHEMA }
+      })
     });
 
-    const raw = response.choices[0]?.message?.content ?? "{}";
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error("Lovable AI error:", response.status, errorText);
+      
+      if (response.status === 429) {
+        return new Response(
+          JSON.stringify({ error: "Rate limit exceeded. Please try again in a moment." }),
+          { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      if (response.status === 402) {
+        return new Response(
+          JSON.stringify({ error: "AI credits exhausted. Please add credits to your workspace." }),
+          { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      
+      throw new Error(`Lovable AI API error: ${response.status} ${errorText}`);
+    }
+
+    const responseData = await response.json();
+    const raw = responseData.choices[0]?.message?.content ?? "{}";
     const data = JSON.parse(raw);
 
     // Server-side validation: check locked cells
