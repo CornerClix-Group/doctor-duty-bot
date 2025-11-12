@@ -450,6 +450,77 @@ serve(async (req) => {
       }
     }
 
+    // Fill gaps: assign missing shifts to eligible providers
+    for (const daySchedule of data.schedule ?? []) {
+      const date = daySchedule.date;
+      const pattern = daySchedule.pattern;
+      const assignments = daySchedule.assignments ?? [];
+      
+      // Determine required shifts for this pattern
+      const requiredShifts = pattern === 7 
+        ? ['D1', 'D2', 'MIDA', 'MIDB', 'E', 'N', 'FT W']
+        : ['D1', 'D2', 'MIDA', 'MIDB', 'E', 'N', 'FT AM', 'FT PM'];
+      
+      // Add FT W12 on Sundays for pattern 7
+      if (pattern === 7 && new Date(date).getDay() === 0) {
+        requiredShifts.push('FT W12');
+      }
+      
+      // Find unfilled shifts
+      const assignedShifts = new Set(assignments.map((a: any) => a.shift));
+      const unfilledShifts = requiredShifts.filter(s => !assignedShifts.has(s));
+      
+      if (unfilledShifts.length === 0) continue;
+      
+      // Build list of eligible providers for each unfilled shift
+      for (const shift of unfilledShifts) {
+        // Find providers who can work this shift on this date
+        const eligible: string[] = [];
+        
+        for (const p of schedule_data.providers) {
+          if (!p.name) continue;
+          
+          // Check if provider is locked on this date
+          const locked = lockedMap.get(`${date}|${p.name}`);
+          if (locked === 'X' || locked === 'L' || locked === 'LH') continue;
+          if (locked && locked !== shift) continue; // already assigned to another shift
+          
+          // Check if already assigned on this day
+          const alreadyAssigned = assignments.some((a: any) => a.provider === p.name);
+          if (alreadyAssigned) continue;
+          
+          // Check provider constraints from provider_profiles
+          const profile = provider_profiles.find((pp: any) => 
+            `${pp.first_name} ${pp.last_name}` === p.name
+          );
+          
+          if (profile) {
+            const allowed = profile.allowed_shifts || [];
+            const disallowed = profile.rules?.disallowed_shifts || [];
+            
+            if (allowed.length > 0 && !allowed.includes(shift)) continue;
+            if (disallowed.includes(shift)) continue;
+          }
+          
+          eligible.push(p.name);
+        }
+        
+        // Assign to first eligible provider
+        if (eligible.length > 0) {
+          assignments.push({ shift, provider: eligible[0] });
+        } else {
+          // Still unfilled - add warning if not already present
+          if (!data.warnings) data.warnings = [];
+          const warningMsg = `${date} ${shift} could not be filled (no eligible providers)`;
+          if (!data.warnings.includes(warningMsg)) {
+            data.warnings.push(warningMsg);
+          }
+        }
+      }
+      
+      daySchedule.assignments = assignments;
+    }
+
     // Recompute provider_totals and pay_period_totals from corrected schedule
     const regularShifts = new Set(['D1','D2','MIDA','MIDB','E','N','FT AM','FT PM','FT W','FT W12']);
     const targetMap = new Map<string, number>();
