@@ -63,6 +63,8 @@ const getShiftTime = (shift: string, pattern: number): string => {
       'N': '9p-7a',
       'FT W': '10a-8p',
       'FT W12': '12p-10p',
+      'C': '6a-10p',
+      'A10': 'Admin',
     };
     return times[shift] || '';
   } else {
@@ -77,8 +79,45 @@ const getShiftTime = (shift: string, pattern: number): string => {
       'N': '10p-7a',
       'FT AM': '7a-4p',
       'FT PM': '2p-11p',
+      'C': '6a-10p',
+      'A10': 'Admin',
     };
     return times[shift] || '';
+  }
+};
+
+const getShiftStartHour = (shift: string, pattern: number): number => {
+  if (shift === 'A10') return 999; // A10 always at bottom
+  if (shift === 'C') return 6;
+  
+  if (pattern === 7) {
+    const starts: { [key: string]: number } = {
+      'D1': 6,
+      'D2': 8,
+      'FT W': 10,
+      'MIDA': 11,
+      'MID1': 11,
+      'FT W12': 12,
+      'MIDB': 14,
+      'MID2': 14,
+      'E': 16,
+      'N': 21,
+    };
+    return starts[shift] ?? 0;
+  } else {
+    const starts: { [key: string]: number } = {
+      'D1': 6,
+      'FT AM': 7,
+      'D2': 8,
+      'MIDA': 11,
+      'MID1': 11,
+      'FT PM': 14,
+      'MIDB': 15,
+      'MID2': 15,
+      'E': 17,
+      'N': 22,
+    };
+    return starts[shift] ?? 0;
   }
 };
 
@@ -171,7 +210,13 @@ export const ScheduleCalendar = ({ schedule, month }: ScheduleCalendarProps) => 
                 
                 {daySchedule && (
                   <div className="space-y-1">
-                    {daySchedule.assignments.map((assignment, aIdx) => (
+                    {daySchedule.assignments
+                      .sort((a, b) => {
+                        const hourA = getShiftStartHour(a.shift, daySchedule.pattern);
+                        const hourB = getShiftStartHour(b.shift, daySchedule.pattern);
+                        return hourA - hourB;
+                      })
+                      .map((assignment, aIdx) => (
                       <div
                         key={aIdx}
                         className="text-xs p-1 rounded"
