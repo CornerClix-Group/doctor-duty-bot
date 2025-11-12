@@ -76,17 +76,59 @@ export default function GenerateSchedule() {
 
       console.log('Calling generate-schedule edge function...');
 
-      // Use uploaded normalized data if available; otherwise build minimal skeleton
-      const schedule_data = uploadedData?.month ? uploadedData : {
-        month: `${month} ${year}`,
-        coverage_pattern: {},
-        providers: providers.map((p: any) => ({
+      // Build normalized schedule_data expected by the edge function
+      const normalizeScheduleData = () => {
+        // Case 1: already normalized by parser
+        if (uploadedData && Array.isArray(uploadedData.providers)) {
+          return uploadedData;
+        }
+        // Case 2: legacy shape with root-level days[] and shifts map per day
+        const coverage_pattern: Record<string, number> = {};
+        const allDates: string[] = [];
+        if (uploadedData?.days && Array.isArray(uploadedData.days)) {
+          for (const d of uploadedData.days) {
+            if (d?.date) {
+              allDates.push(d.date);
+              if (typeof d.pattern === 'number') coverage_pattern[d.date] = d.pattern;
+            }
+          }
+        }
+        // Create provider list with empty day grid to start
+        const providerList = providers.map((p: any) => ({
           name: p.name,
           target_shifts: p.target_shifts,
           weekend_quota: p.weekend_quota,
-          days: [] as any[]
-        }))
+          days: allDates.map((date) => ({ date, value: '', locked: false }))
+        }));
+        // If there are pre-assigned shifts in uploadedData.days[].shifts, lock them in the correct provider row
+        if (uploadedData?.days && Array.isArray(uploadedData.days)) {
+          for (const d of uploadedData.days) {
+            const date = d?.date;
+            const shifts = d?.shifts || {};
+            if (!date || typeof shifts !== 'object') continue;
+            for (const [shiftCode, providerNameOrLast] of Object.entries(shifts)) {
+              if (!shiftCode || !providerNameOrLast) continue;
+              const match = providerList.find((p) => {
+                // try full match, then last-name match
+                return p.name === providerNameOrLast || p.name.endsWith(` ${providerNameOrLast}`);
+              });
+              if (!match) continue;
+              const dayCell = match.days.find((x: any) => x.date === date);
+              if (dayCell) {
+                dayCell.value = shiftCode;
+                dayCell.locked = true;
+              }
+            }
+          }
+        }
+        return {
+          month: `${month} ${year}`,
+          coverage_pattern,
+          providers: providerList,
+        };
       };
+
+      const schedule_data = normalizeScheduleData();
 
       const { data, error } = await supabase.functions.invoke('generate-schedule', {
         body: {
