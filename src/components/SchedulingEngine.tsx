@@ -28,25 +28,59 @@ export const SchedulingEngine = ({ scheduleData, onScheduleGenerated }: Scheduli
     setGeneratedResult(null);
 
     try {
-      // Fetch provider profiles from database
-      const { data: provider_profiles, error: profileError } = await supabase
-        .from('provider_profiles')
-        .select('*');
-
-      if (profileError) {
-        throw new Error(`Failed to fetch provider profiles: ${profileError.message}`);
+      // Validate scheduleData has been uploaded
+      if (!scheduleData || !scheduleData.providers || scheduleData.providers.length === 0) {
+        throw new Error("Please upload a schedule file first before generating.");
       }
 
-      if (!provider_profiles || provider_profiles.length === 0) {
-        throw new Error("No provider profiles found. Please add providers first.");
+      // Fetch provider data from the providers table
+      const { data: providersData, error: providersError } = await supabase
+        .from('providers')
+        .select(`
+          *,
+          provider_constraints (*)
+        `)
+        .eq('active', true);
+
+      if (providersError) {
+        throw new Error(`Failed to fetch providers: ${providersError.message}`);
       }
+
+      if (!providersData || providersData.length === 0) {
+        throw new Error("No active providers found. Please add providers first.");
+      }
+
+      // Transform to match edge function expected format
+      const provider_profiles = providersData.map((p: any) => {
+        const constraints = Array.isArray(p.provider_constraints) 
+          ? p.provider_constraints[0] 
+          : p.provider_constraints;
+        
+        return {
+          first_name: p.name.split(' ')[0],
+          last_name: p.name.split(' ').slice(1).join(' '),
+          email: p.email || '',
+          role: 'provider',
+          allowed_shifts: constraints?.allowed_shifts || [],
+          rules: {
+            disallowed_shifts: constraints?.disallowed_shifts || [],
+            preferred_shifts: constraints?.preferred_shifts || [],
+            rest_hours: constraints?.rest_hours || 12,
+            n_recovery_days: constraints?.n_recovery_days || 2,
+            block_pattern: constraints?.block_pattern || null,
+            max_consecutive_N: constraints?.max_consecutive_n || null,
+            saturday_restrictions: constraints?.saturday_restrictions || null,
+            sunday_restrictions: constraints?.sunday_restrictions || null,
+          }
+        };
+      });
 
       console.log('Calling generate-schedule edge function with:', {
         provider_profiles,
         schedule_data: scheduleData
       });
 
-      // Call the edge function with exact parameter names
+      // Call the edge function with snake_case parameter names
       const { data, error } = await supabase.functions.invoke('generate-schedule', {
         body: {
           provider_profiles,
