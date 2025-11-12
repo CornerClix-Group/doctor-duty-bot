@@ -258,7 +258,7 @@ export default function GenerateSchedule() {
             </div>
           </CardHeader>
           <CardContent>
-            <ScheduleUpload onScheduleLoad={setUploadedData} />
+            <ScheduleUpload key={uploadedData ? 'uploaded' : 'empty'} onScheduleLoad={setUploadedData} />
             {uploadedData && (
               <div className="mt-4 p-3 bg-muted rounded-lg">
                 <p className="text-sm text-muted-foreground">
