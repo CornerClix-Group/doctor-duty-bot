@@ -217,11 +217,58 @@ export default function GenerateSchedule() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Optional: Upload Existing Schedule</CardTitle>
-            <CardDescription>Upload an Excel template with existing assignments</CardDescription>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle>Optional: Upload Existing Schedule</CardTitle>
+                <CardDescription>Upload an Excel template with existing assignments</CardDescription>
+              </div>
+              {uploadedData && (
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button variant="destructive" size="sm">
+                      <Trash2 className="mr-2 h-4 w-4" />
+                      Delete Upload
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Delete Uploaded Schedule?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        This will remove the uploaded schedule data. You can upload a new file anytime. This action cannot be undone.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogAction 
+                        onClick={() => {
+                          setUploadedData(null);
+                          toast({
+                            title: 'Upload Deleted',
+                            description: 'The uploaded schedule has been removed',
+                          });
+                        }}
+                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                      >
+                        Delete Upload
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              )}
+            </div>
           </CardHeader>
           <CardContent>
             <ScheduleUpload onScheduleLoad={setUploadedData} />
+            {uploadedData && (
+              <div className="mt-4 p-3 bg-muted rounded-lg">
+                <p className="text-sm text-muted-foreground">
+                  ✓ Schedule uploaded: <span className="font-medium text-foreground">{uploadedData.month}</span>
+                  {uploadedData.providers && (
+                    <span className="ml-2">({uploadedData.providers.length} providers)</span>
+                  )}
+                </p>
+              </div>
+            )}
           </CardContent>
         </Card>
 
