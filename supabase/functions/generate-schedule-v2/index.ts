@@ -565,34 +565,111 @@ serve(async (req) => {
     data.provider_totals = providerTotals;
     data.pay_period_totals = payPeriodTotals;
 
-    // Validate each day's assignments AFTER correction
+    // Strict post-correction validation with detailed reporting
+    const validationReport = {
+      lockedCellsPreserved: 0,
+      lockedCellViolations: [] as string[],
+      constraintViolations: [] as string[],
+      unfilledShifts: [] as string[],
+      providerMismatches: [] as string[]
+    };
+
+    // Track all locked cells and verify preservation
+    lockedMap.forEach((lockedValue, key) => {
+      const [date, providerName] = key.split("|");
+      const daySchedule = data.schedule?.find((d: any) => d.date === date);
+      if (!daySchedule) return;
+
+      const providerAssignments = daySchedule.assignments?.filter((a: any) => a.provider === providerName) || [];
+
+      if (lockedValue === 'X' || lockedValue === 'L' || lockedValue === 'LH') {
+        // Provider MUST be off (no assignments)
+        if (providerAssignments.length > 0) {
+          validationReport.lockedCellViolations.push(
+            `${date} ${providerName}: locked as ${lockedValue} but assigned to ${providerAssignments.map((a: any) => a.shift).join(', ')}`
+          );
+        } else {
+          validationReport.lockedCellsPreserved++;
+        }
+      } else {
+        // Provider MUST be assigned to exact shift
+        const hasCorrectShift = providerAssignments.some((a: any) => a.shift === lockedValue);
+        const otherShifts = providerAssignments.filter((a: any) => a.shift !== lockedValue);
+        
+        if (!hasCorrectShift) {
+          validationReport.lockedCellViolations.push(
+            `${date} ${providerName}: expected ${lockedValue}, but assigned to ${providerAssignments.map((a: any) => a.shift).join(', ') || 'nothing'}`
+          );
+        } else if (otherShifts.length > 0) {
+          validationReport.lockedCellViolations.push(
+            `${date} ${providerName}: locked to ${lockedValue} but also assigned to ${otherShifts.map((a: any) => a.shift).join(', ')}`
+          );
+        } else {
+          validationReport.lockedCellsPreserved++;
+        }
+      }
+    });
+
+    // Check for constraint violations and unfilled shifts
     for (const daySchedule of data.schedule ?? []) {
-      for (const assignment of daySchedule.assignments ?? []) {
-        if (!assignment.provider) continue; // Skip empty assignments
-        const key = `${daySchedule.date}|${assignment.provider}`;
-        const locked = lockedMap.get(key);
-        if (locked) {
-          if (locked === 'X' || locked === 'L' || locked === 'LH') {
-            lockedViolations.push(`${daySchedule.date} ${assignment.provider}: has locked ${locked}, cannot assign ${assignment.shift}`);
-          } else if (locked !== assignment.shift) {
-            lockedViolations.push(`${daySchedule.date} ${assignment.provider}: expected ${locked}, got ${assignment.shift}`);
+      const requiredShifts = daySchedule.pattern === 7 
+        ? ['D1', 'D2', 'MIDA', 'MIDB', 'E', 'N', 'FT W']
+        : ['D1', 'D2', 'MIDA', 'MIDB', 'E', 'N', 'FT AM', 'FT PM'];
+      
+      if (daySchedule.pattern === 7 && new Date(daySchedule.date).getDay() === 0) {
+        requiredShifts.push('FT W12');
+      }
+
+      for (const shift of requiredShifts) {
+        const assignment = daySchedule.assignments?.find((a: any) => a.shift === shift);
+        if (!assignment || !assignment.provider) {
+          validationReport.unfilledShifts.push(`${daySchedule.date} ${shift}`);
+        } else {
+          // Check if provider is allowed to work this shift
+          const profile = provider_profiles.find((pp: any) => 
+            `${pp.first_name} ${pp.last_name}` === assignment.provider
+          );
+          if (profile) {
+            const allowed = profile.allowed_shifts || [];
+            const disallowed = profile.rules?.disallowed_shifts || [];
+            
+            if (allowed.length > 0 && !allowed.includes(shift)) {
+              validationReport.constraintViolations.push(
+                `${daySchedule.date} ${assignment.provider} assigned to ${shift}, but only allowed: ${allowed.join(', ')}`
+              );
+            }
+            if (disallowed.includes(shift)) {
+              validationReport.constraintViolations.push(
+                `${daySchedule.date} ${assignment.provider} assigned to ${shift}, but it's disallowed`
+              );
+            }
           }
         }
       }
     }
 
-    if (lockedViolations.length) {
-      console.error("[v2] Locked cell violations after correction:", lockedViolations);
+    // Block schedule if critical violations exist
+    if (validationReport.lockedCellViolations.length > 0) {
+      console.error("[v2] CRITICAL: Locked cell violations detected:", validationReport.lockedCellViolations);
       return new Response(
         JSON.stringify({
-          error: "Locked cell violation",
-          details: lockedViolations.slice(0, 10)
+          error: "Locked cell violations detected",
+          validation: validationReport
         }),
         { status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
+    // Attach validation report to response (even if successful)
+    data.validation = validationReport;
+
     console.log("[v2] Schedule generated successfully");
+    console.log("[v2] Validation report:", {
+      preserved: validationReport.lockedCellsPreserved,
+      violations: validationReport.lockedCellViolations.length,
+      constraintIssues: validationReport.constraintViolations.length,
+      unfilled: validationReport.unfilledShifts.length
+    });
 
     return new Response(JSON.stringify(data), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },

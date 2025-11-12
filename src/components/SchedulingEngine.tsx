@@ -19,6 +19,13 @@ export const SchedulingEngine = ({ scheduleData, onScheduleGenerated }: Scheduli
     status: 'success' | 'warning' | 'error';
     message: string;
     details?: string[];
+    validation?: {
+      lockedCellsPreserved?: number;
+      lockedCellViolations?: string[];
+      constraintViolations?: string[];
+      unfilledShifts?: string[];
+      providerMismatches?: string[];
+    };
   } | null>(null);
   const { toast } = useToast();
 
@@ -120,24 +127,44 @@ export const SchedulingEngine = ({ scheduleData, onScheduleGenerated }: Scheduli
       const result = data;
       console.log('Schedule generation result:', result);
 
+      const validation = result.validation || {};
+      const hasViolations = (validation.lockedCellViolations?.length || 0) > 0 || 
+                           (validation.constraintViolations?.length || 0) > 0;
+      const hasWarnings = (result.warnings?.length || 0) > 0 || 
+                         (validation.unfilledShifts?.length || 0) > 0;
+
       const details: string[] = [
-        `${result.schedule?.length || 0} shift assignments generated`,
-        'Provider constraints respected',
-        'Rest requirements enforced',
-        'Weekend quotas balanced'
+        `${result.schedule?.length || 0} days scheduled`,
+        `${validation.lockedCellsPreserved || 0} locked cells preserved`,
       ];
 
-      if (result.warnings && result.warnings.length > 0) {
+      if (validation.unfilledShifts?.length) {
+        details.push(`${validation.unfilledShifts.length} shifts unfilled (no eligible providers)`);
+      }
+      if (validation.constraintViolations?.length) {
+        details.push(`${validation.constraintViolations.length} constraint violations detected`);
+      }
+
+      if (hasViolations) {
+        setValidationResults({
+          status: 'error',
+          message: 'Schedule has critical violations',
+          details,
+          validation
+        });
+      } else if (hasWarnings) {
         setValidationResults({
           status: 'warning',
-          message: `Schedule generated with ${result.warnings.length} warnings`,
-          details: result.warnings.slice(0, 5)
+          message: `Schedule generated with warnings`,
+          details,
+          validation
         });
       } else {
         setValidationResults({
           status: 'success',
           message: 'Schedule generated successfully!',
-          details
+          details,
+          validation
         });
       }
 
@@ -239,27 +266,103 @@ export const SchedulingEngine = ({ scheduleData, onScheduleGenerated }: Scheduli
           </div>
 
           {validationResults && (
-            <Alert variant={validationResults.status === 'error' ? 'destructive' : 'default'}>
-              {validationResults.status === 'success' && (
-                <CheckCircle2 className="h-4 w-4 text-success" />
+            <div className="space-y-3">
+              <Alert variant={validationResults.status === 'error' ? 'destructive' : 'default'}>
+                {validationResults.status === 'success' && (
+                  <CheckCircle2 className="h-4 w-4 text-success" />
+                )}
+                {validationResults.status === 'warning' && (
+                  <AlertTriangle className="h-4 w-4 text-warning" />
+                )}
+                <AlertTitle>{validationResults.message}</AlertTitle>
+                {validationResults.details && (
+                  <AlertDescription>
+                    <ul className="mt-2 space-y-1">
+                      {validationResults.details.map((detail, idx) => (
+                        <li key={idx} className="text-xs flex items-center gap-1">
+                          {validationResults.status === 'success' ? (
+                            <CheckCircle2 className="h-3 w-3 text-success" />
+                          ) : (
+                            <AlertTriangle className="h-3 w-3" />
+                          )}
+                          {detail}
+                        </li>
+                      ))}
+                    </ul>
+                  </AlertDescription>
+                )}
+              </Alert>
+
+              {/* Detailed Validation Report */}
+              {validationResults.validation && (
+                <div className="border rounded-lg p-4 bg-muted/20 space-y-3">
+                  <h3 className="font-semibold text-sm">Validation Details</h3>
+                  
+                  {validationResults.validation.lockedCellViolations && 
+                   validationResults.validation.lockedCellViolations.length > 0 && (
+                    <div className="space-y-1">
+                      <p className="text-xs font-medium text-destructive">
+                        🚫 Locked Cell Violations ({validationResults.validation.lockedCellViolations.length})
+                      </p>
+                      <div className="pl-3 space-y-0.5 max-h-32 overflow-y-auto">
+                        {validationResults.validation.lockedCellViolations.slice(0, 10).map((v, i) => (
+                          <p key={i} className="text-xs text-muted-foreground font-mono">{v}</p>
+                        ))}
+                        {validationResults.validation.lockedCellViolations.length > 10 && (
+                          <p className="text-xs text-muted-foreground italic">
+                            ...and {validationResults.validation.lockedCellViolations.length - 10} more
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {validationResults.validation.constraintViolations && 
+                   validationResults.validation.constraintViolations.length > 0 && (
+                    <div className="space-y-1">
+                      <p className="text-xs font-medium text-warning">
+                        ⚠️ Constraint Violations ({validationResults.validation.constraintViolations.length})
+                      </p>
+                      <div className="pl-3 space-y-0.5 max-h-32 overflow-y-auto">
+                        {validationResults.validation.constraintViolations.slice(0, 10).map((v, i) => (
+                          <p key={i} className="text-xs text-muted-foreground font-mono">{v}</p>
+                        ))}
+                        {validationResults.validation.constraintViolations.length > 10 && (
+                          <p className="text-xs text-muted-foreground italic">
+                            ...and {validationResults.validation.constraintViolations.length - 10} more
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {validationResults.validation.unfilledShifts && 
+                   validationResults.validation.unfilledShifts.length > 0 && (
+                    <div className="space-y-1">
+                      <p className="text-xs font-medium text-muted-foreground">
+                        ℹ️ Unfilled Shifts ({validationResults.validation.unfilledShifts.length})
+                      </p>
+                      <div className="pl-3 space-y-0.5 max-h-32 overflow-y-auto">
+                        {validationResults.validation.unfilledShifts.slice(0, 10).map((v, i) => (
+                          <p key={i} className="text-xs text-muted-foreground font-mono">{v}</p>
+                        ))}
+                        {validationResults.validation.unfilledShifts.length > 10 && (
+                          <p className="text-xs text-muted-foreground italic">
+                            ...and {validationResults.validation.unfilledShifts.length - 10} more
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {validationResults.validation.lockedCellsPreserved !== undefined && (
+                    <p className="text-xs text-success font-medium">
+                      ✓ {validationResults.validation.lockedCellsPreserved} locked cells preserved correctly
+                    </p>
+                  )}
+                </div>
               )}
-              {validationResults.status === 'warning' && (
-                <AlertTriangle className="h-4 w-4 text-warning" />
-              )}
-              <AlertTitle>{validationResults.message}</AlertTitle>
-              {validationResults.details && (
-                <AlertDescription>
-                  <ul className="mt-2 space-y-1">
-                    {validationResults.details.map((detail, idx) => (
-                      <li key={idx} className="text-xs flex items-center gap-1">
-                        <CheckCircle2 className="h-3 w-3 text-success" />
-                        {detail}
-                      </li>
-                    ))}
-                  </ul>
-                </AlertDescription>
-              )}
-            </Alert>
+            </div>
           )}
         </div>
       </div>
