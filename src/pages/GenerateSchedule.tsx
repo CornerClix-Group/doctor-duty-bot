@@ -96,12 +96,16 @@ export default function GenerateSchedule() {
           }
         }
         // Create provider list with empty day grid to start
-        const providerList = providers.map((p: any) => ({
-          name: p.name,
-          target_shifts: p.target_shifts,
-          weekend_quota: p.weekend_quota,
-          days: allDates.map((date) => ({ date, value: '', locked: false }))
-        }));
+        const providerList = providers.map((p: any) => {
+          const excelProvider = uploadedData?.providers?.[p.name];
+          return {
+            name: p.name,
+            // Prefer month-specific targets from Excel; fallback to DB
+            target_shifts: excelProvider?.targetShifts ?? p.target_shifts ?? 0,
+            weekend_quota: excelProvider?.weekendQuota ?? p.weekend_quota ?? 0,
+            days: allDates.map((date) => ({ date, value: '', locked: false }))
+          };
+        });
 
         // Apply locked cells from parser (includes X, L, LH, C, A10, pre-assigned shifts)
         if (uploadedData?.lockedCells) {
