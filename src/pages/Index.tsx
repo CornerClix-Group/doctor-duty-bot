@@ -6,6 +6,7 @@ import React, { useState } from "react";
 import * as XLSX from "xlsx";
 import { ValidationPanel } from "@/components/ValidationPanel";
 import { SchedulingEngine } from "@/components/SchedulingEngine";
+import { supabase } from "@/integrations/supabase/client";
 
 export default function IndexPage() {
   const [parsedData, setParsedData] = useState(null);
@@ -14,44 +15,43 @@ export default function IndexPage() {
   const [validated, setValidated] = useState(false);
   const [generatedSchedule, setGeneratedSchedule] = useState(null);
 
-  const handleUpload = async (e) => {
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const data = await file.arrayBuffer();
-    const workbook = XLSX.read(data, { type: "array" });
-    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    // Read file locally (XLSX)
+    const arrayBuffer = await file.arrayBuffer();
+    const workbook = XLSX.read(arrayBuffer, { type: "array" });
+    const base64 = XLSX.write(workbook, { type: "base64", bookType: "xlsx" });
 
-    const json = XLSX.utils.sheet_to_json(sheet, { header: 1 });
-
-    // Send raw workbook to backend for parsing + validation
-    const base64 = XLSX.write(workbook, { type: "base64" });
-
-    const response = await fetch(
-      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-schedule-v2`,
+    // Call Edge Function via Supabase client
+    const { data, error } = await supabase.functions.invoke(
+      "generate-schedule-v2",
       {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          // Auth auto-inserted by Supabase client for backend
-        },
-        body: JSON.stringify({ file: base64, mode: "validateOnly" })
+        body: { file: base64, mode: "validateOnly" },
       }
     );
 
-    const result = await response.json();
-
-    if (!response.ok) {
-      setValidationErrors(result.validation_errors || []);
-      setValidationWarnings(result.validation_warnings || []);
+    // Handle response
+    if (error) {
+      console.error("Edge Function error:", error);
+      setValidationErrors(["Failed to contact scheduling service. Check console for details."]);
+      setValidationWarnings([]);
       setValidated(false);
       return;
     }
 
-    // Valid template; save parsed JSON
-    setParsedData(result.parsedSchedule);
-    setValidationWarnings(result.validation_warnings || []);
-    setValidated(true);
+    // Success path
+    if (data.validation_errors?.length) {
+      setValidationErrors(data.validation_errors);
+      setValidationWarnings(data.validation_warnings || []);
+      setValidated(false);
+    } else {
+      setParsedData(data.parsedSchedule);
+      setValidationWarnings(data.validation_warnings || []);
+      setValidated(true);
+      setValidationErrors([]);
+    }
   };
 
   return (
