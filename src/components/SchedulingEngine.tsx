@@ -170,47 +170,62 @@ export const SchedulingEngine = ({ scheduleData, onScheduleGenerated }: Scheduli
     }
   };
 
-  const handleExport = () => {
-    if (!generatedResult || !scheduleData) return;
-    
+  const handleExport = async () => {
+    if (!generatedResult || !scheduleData) {
+      toast({
+        title: "Export Error",
+        description: "Schedule not generated yet.",
+        variant: "destructive"
+      });
+      return;
+    }
+
     try {
       // Extract month and year from scheduleData
       const monthName = scheduleData.month || 'January';
       const year = scheduleData.year || new Date().getFullYear();
-      
-      // Parse month name to index (0-11)
       const monthIndex = new Date(`${monthName} 1, ${year}`).getMonth();
       
-      // Extract provider names from scheduleData
+      // Get provider data
       const providers = scheduleData.providers || [];
       const providerNames = providers.map((p: any) => p.name);
-      
-      // Generate template workbook
-      const templateWb = generateScheduleTemplate(monthIndex, year, providerNames);
-      
-      // Export schedule data into the template
+
+      if (!providerNames.length) {
+        throw new Error("No providers found in schedule data");
+      }
+
+      // 1. Generate a fresh blank template workbook for SAME month/year
+      const wb = generateScheduleTemplate(
+        monthIndex,
+        year,
+        providerNames
+      );
+
+      // 2. Export filled schedule into that workbook
       const filledWb = exportFinalScheduleToExcel(
-        generatedResult.schedule,
-        templateWb,
+        generatedResult.schedule,  // JSON schedule returned by edge function
+        wb,
         providers
       );
-      
-      // Convert to array buffer and download
-      const wbout = XLSX.write(filledWb, { bookType: 'xlsx', type: 'array' });
+
+      // 3. Convert workbook to downloadable file
+      const wbout = XLSX.write(filledWb, { bookType: "xlsx", type: "array" });
+
+      const filename = `FinalSchedule-${monthName}-${year}.xlsx`;
+
       const blob = new Blob([wbout], {
-        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       });
-      
-      const filename = `Schedule_${monthName}_${year}_Generated.xlsx`;
+
       const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
+      const a = document.createElement("a");
       a.href = url;
       a.download = filename;
       document.body.appendChild(a);
       a.click();
       a.remove();
       URL.revokeObjectURL(url);
-      
+
       toast({
         title: "Export Successful",
         description: `Schedule exported as ${filename}`,
@@ -219,7 +234,7 @@ export const SchedulingEngine = ({ scheduleData, onScheduleGenerated }: Scheduli
       console.error('Export failed:', err);
       toast({
         title: "Export Failed",
-        description: "Failed to export schedule. Please try again.",
+        description: err instanceof Error ? err.message : "Failed to export schedule. Please try again.",
         variant: "destructive"
       });
     }
