@@ -25,7 +25,7 @@ function getNextMonthAndYear() {
 }
 
 interface ScheduleUploadProps {
-  onScheduleLoad: (data: any) => void;
+  onScheduleLoad: (data: any, base64File?: string) => void;
   selectedMonth?: number;
   selectedYear?: number;
 }
@@ -117,7 +117,13 @@ export const ScheduleUpload = ({ onScheduleLoad, selectedMonth: propMonth, selec
         
         // Parse the schedule data
         const parsedData = parseScheduleData(ws);
-        onScheduleLoad(parsedData);
+        
+        // Convert to base64 for edge function
+        const base64 = btoa(
+          new Uint8Array(bstr).reduce((data, byte) => data + String.fromCharCode(byte), '')
+        );
+        
+        onScheduleLoad(parsedData, base64);
         setUploadedFileName(file.name);
       } catch (err) {
         setError('Failed to parse Excel file. Please check the format.');

@@ -33,6 +33,7 @@ export default function GenerateSchedule() {
   const [year, setYear] = useState(2026);
   const [generating, setGenerating] = useState(false);
   const [uploadedData, setUploadedData] = useState<any>(null);
+  const [uploadedFileBase64, setUploadedFileBase64] = useState<string | null>(null);
   const [generatedSchedule, setGeneratedSchedule] = useState<any>(null);
 
   // Convert month name to 1-12 number for ScheduleUpload
@@ -81,85 +82,13 @@ export default function GenerateSchedule() {
 
       console.log('Calling generate-schedule edge function...');
 
-      // Build normalized schedule_data expected by the edge function
-      const normalizeScheduleData = () => {
-        // Case 1: already normalized by parser
-        if (uploadedData && Array.isArray(uploadedData.providers)) {
-          return uploadedData;
-        }
-        // Case 2: legacy shape with root-level days[] and shifts map per day
-        const coverage_pattern: Record<string, number> = {};
-        const allDates: string[] = [];
-        if (uploadedData?.days && Array.isArray(uploadedData.days)) {
-          for (const d of uploadedData.days) {
-            if (d?.date) {
-              allDates.push(d.date);
-              if (typeof d.pattern === 'number') coverage_pattern[d.date] = d.pattern;
-            }
-          }
-        }
-        // Create provider list with empty day grid to start
-        const providerList = providers.map((p: any) => {
-          const excelProvider = uploadedData?.providers?.[p.name];
-          return {
-            name: p.name,
-            // Prefer month-specific targets from Excel; fallback to DB
-            target_shifts: excelProvider?.targetShifts ?? p.target_shifts ?? 0,
-            weekend_quota: excelProvider?.weekendQuota ?? p.weekend_quota ?? 0,
-            days: allDates.map((date) => ({ date, value: '', locked: false }))
-          };
-        });
-
-        // Apply locked cells from parser (includes X, L, LH, C, A10, pre-assigned shifts)
-        if (uploadedData?.lockedCells) {
-          for (const [providerName, dateCells] of Object.entries(uploadedData.lockedCells)) {
-            const providerEntry = providerList.find((p: any) => p.name === providerName);
-            if (!providerEntry) continue;
-            
-            for (const [date, value] of Object.entries(dateCells as Record<string, string>)) {
-              const dayCell = providerEntry.days.find((x: any) => x.date === date);
-              if (dayCell) {
-                dayCell.value = value;
-                dayCell.locked = true;
-              }
-            }
-          }
-        }
-
-        // If there are pre-assigned shifts in uploadedData.days[].shifts, lock them in the correct provider row
-        if (uploadedData?.days && Array.isArray(uploadedData.days)) {
-          for (const d of uploadedData.days) {
-            const date = d?.date;
-            const shifts = d?.shifts || {};
-            if (!date || typeof shifts !== 'object') continue;
-            for (const [shiftCode, providerNameOrLast] of Object.entries(shifts)) {
-              if (!shiftCode || !providerNameOrLast) continue;
-              const match = providerList.find((p) => {
-                // try full match, then last-name match
-                return p.name === providerNameOrLast || p.name.endsWith(` ${providerNameOrLast}`);
-              });
-              if (!match) continue;
-              const dayCell = match.days.find((x: any) => x.date === date);
-              if (dayCell && !dayCell.locked) {
-                dayCell.value = shiftCode;
-                dayCell.locked = true;
-              }
-            }
-          }
-        }
-        return {
-          month: `${month} ${year}`,
-          coverage_pattern,
-          providers: providerList,
-        };
-      };
-
-      const schedule_data = normalizeScheduleData();
+      if (!uploadedFileBase64) {
+        throw new Error('Please upload an Excel schedule file first.');
+      }
 
       const { data, error } = await supabase.functions.invoke('generate-schedule-v2', {
         body: {
-          provider_profiles,
-          schedule_data
+          file: uploadedFileBase64
         }
       });
 
@@ -338,7 +267,10 @@ export default function GenerateSchedule() {
           <CardContent>
             <ScheduleUpload 
               key={uploadedData ? 'uploaded' : 'empty'} 
-              onScheduleLoad={setUploadedData}
+              onScheduleLoad={(data, base64) => {
+                setUploadedData(data);
+                setUploadedFileBase64(base64 || null);
+              }}
               selectedMonth={selectedMonthNumber}
               selectedYear={year}
             />
