@@ -6,6 +6,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import * as XLSX from 'xlsx';
 import { parseScheduleData } from '@/lib/scheduleParser';
 import { generateScheduleTemplate } from '@/lib/scheduleTemplateGenerator';
+import { supabase } from '@/integrations/supabase/client';
 
 interface ScheduleUploadProps {
   onScheduleLoad: (data: any) => void;
@@ -67,12 +68,42 @@ export const ScheduleUpload = ({ onScheduleLoad }: ScheduleUploadProps) => {
     if (file) handleFile(file);
   }, [handleFile]);
 
+  const handleDownloadTemplate = async () => {
+    try {
+      // Fetch provider names from database
+      const { data: providers } = await supabase
+        .from('provider_profiles')
+        .select('first_name, last_name')
+        .order('last_name');
+
+      const providerNames = providers?.map(p => 
+        `${p.first_name} ${p.last_name}`.trim()
+      ) || ['Provider 1', 'Provider 2', 'Provider 3'];
+
+      // Generate template for next month
+      const today = new Date();
+      const nextMonth = new Date(today.getFullYear(), today.getMonth() + 1, 1);
+      const monthIndex = nextMonth.getMonth();
+      const year = nextMonth.getFullYear();
+
+      const wb = generateScheduleTemplate(monthIndex, year, providerNames);
+      
+      const monthName = nextMonth.toLocaleString('default', { month: 'long' });
+      const filename = `ShiftPro_Schedule_${monthName}_${year}.xlsx`;
+      
+      XLSX.writeFile(wb, filename);
+    } catch (err) {
+      console.error('Failed to generate template:', err);
+      setError('Failed to generate template. Please try again.');
+    }
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex justify-end mb-4">
         <Button 
           variant="outline" 
-          onClick={() => generateScheduleTemplate()}
+          onClick={handleDownloadTemplate}
           type="button"
         >
           <Download className="mr-2 h-4 w-4" />
