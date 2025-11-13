@@ -237,58 +237,55 @@ export class HardScheduler {
     return day;
   }
 
-  // --------------------------------------------------------------------------
-  // COMPUTE TOTALS (per provider + per pay period)
-  // --------------------------------------------------------------------------
   computeTotals() {
-    // Initialize totals using provider names from schedule (Excel format)
     const dates = Object.keys(this.schedule).sort();
-    
-    // Collect all unique provider names from the schedule
-    const scheduleProviderNames = new Set<string>();
-    dates.forEach(date => {
-      Object.keys(this.schedule[date]).forEach(name => scheduleProviderNames.add(name));
-    });
 
-    // Initialize provider totals with full structure
-    scheduleProviderNames.forEach(name => {
-      // Find the provider in providerDays to get target and quota
-      const providerData = this.providerDays.find((p: any) => 
-        p.name.trim().toLowerCase() === name.trim().toLowerCase()
-      );
-      
-      this.providerTotals[name] = {
+    // Build index from Excel provider rows so providers with 0 assignments still show
+    const toKey = (s: string) => s.trim().toLowerCase();
+    const excelProviders = new Map<string, any>();
+    this.providerDays.forEach((p: any) => excelProviders.set(toKey(p.name), p));
+
+    // Initialize totals for every Excel provider
+    this.providerTotals = {} as any;
+    for (const [, p] of excelProviders) {
+      this.providerTotals[p.name] = {
         worked: 0,
         weekends: 0,
-        target: providerData?.target_shifts || 0,
-        weekend_quota: providerData?.weekend_quota || 0
+        target: p.target_shifts || 0,
+        weekend_quota: p.weekend_quota || 0,
       };
-    });
+    }
+
+    // Classification per business rules
+    const WORK_SHIFTS = new Set(["D1","D2","MIDA","MIDB","E","N","FT W","FT W12","FT AM","FT PM"]);
 
     let ppCounter = 1;
-    for (let date of dates) {
+    for (const date of dates) {
       this.payPeriodTotals[ppCounter] = this.payPeriodTotals[ppCounter] || 0;
-      
-      // Check if date is a weekend (0=Sunday, 6=Saturday)
-      const dayOfWeek = new Date(date).getDay();
-      const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
 
-      for (let providerName in this.schedule[date]) {
-        const shift = this.schedule[date][providerName];
-        if (shift && shift !== "OFF") {
-          this.providerTotals[providerName].worked += 1;
-          this.payPeriodTotals[ppCounter] += 1;
-          
-          // Count weekend shifts
-          if (isWeekend) {
-            this.providerTotals[providerName].weekends += 1;
-          }
+      const dow = new Date(date).getDay(); // 0=Sun,6=Sat
+      const isWeekend = dow === 0 || dow === 6;
+      const assignments = this.schedule[date] || {};
+
+      for (const assignedName in assignments) {
+        const shift = assignments[assignedName];
+        if (!shift || shift === "OFF") continue; // OFF/leave never counts
+
+        // Map to canonical Excel name (preserve display casing from sheet)
+        const canonical = Object.keys(this.providerTotals).find(n => toKey(n) === toKey(assignedName)) || assignedName;
+
+        // Pay period totals: count all non-OFF assignments (includes C/A10)
+        this.payPeriodTotals[ppCounter] += 1;
+
+        // Worked + weekend counts: ONLY real work shifts (exclude C/A10)
+        if (WORK_SHIFTS.has(shift)) {
+          this.providerTotals[canonical].worked += 1;
+          if (isWeekend) this.providerTotals[canonical].weekends += 1;
         }
       }
 
       // bump PP counter every 14 days
-      if (ppCounter < 14) ppCounter++;
-      else ppCounter = 1;
+      if (ppCounter < 14) ppCounter++; else ppCounter = 1;
     }
   }
 }
