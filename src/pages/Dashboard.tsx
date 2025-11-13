@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   Activity, 
@@ -20,6 +21,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
+import { supabase } from '@/integrations/supabase/client';
 
 const Dashboard = () => {
   const navigate = useNavigate();
@@ -34,10 +36,27 @@ const Dashboard = () => {
     });
   };
 
+  const [activeProviders, setActiveProviders] = useState<number | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+    (async () => {
+      const { count, error } = await (supabase as any)
+        .from('provider_profiles')
+        .select('id', { count: 'exact', head: true })
+        .eq('active', true)
+        .eq('role', 'provider');
+      if (!error && isMounted) setActiveProviders(count ?? 0);
+    })();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   const stats = [
     {
       title: 'Active Providers',
-      value: '15',
+      value: String(activeProviders ?? '—'),
       change: '+2 this month',
       icon: Users,
       color: 'text-primary'
