@@ -336,6 +336,7 @@ class DeterministicScheduler {
       
       const assignments = [];
       
+      // First, add all required coverage shifts
       for (const shift of requiredShifts) {
         let provider = '';
         
@@ -350,11 +351,18 @@ class DeterministicScheduler {
         assignments.push({ shift, provider });
       }
       
-      // Add X/L/LH locked entries
+      // Add all locked cell entries (including A10, C, and non-coverage shifts)
       for (const [key, value] of this.lockedCells.entries()) {
         const [lockedDate, providerName] = key.split('|');
-        if (lockedDate === date && (value === 'X' || value === 'L' || value === 'LH')) {
-          assignments.push({ shift: value, provider: providerName });
+        if (lockedDate === date && value) {
+          // For X/L/LH, just add them
+          if (value === 'X' || value === 'L' || value === 'LH') {
+            assignments.push({ shift: value, provider: providerName });
+          } 
+          // For actual shifts, only add if not already in required shifts
+          else if (!requiredShifts.includes(value)) {
+            assignments.push({ shift: value, provider: providerName });
+          }
         }
       }
       
