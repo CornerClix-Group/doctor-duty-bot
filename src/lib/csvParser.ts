@@ -42,7 +42,7 @@ const parseShiftArray = (value: string | undefined): string[] => {
   }
   
   return value
-    .split("|")
+    .split(",")
     .map(s => s.trim())
     .filter(s => s.length > 0);
 };
