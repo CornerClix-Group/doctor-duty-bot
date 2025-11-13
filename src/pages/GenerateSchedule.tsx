@@ -35,6 +35,9 @@ export default function GenerateSchedule() {
   const [uploadedData, setUploadedData] = useState<any>(null);
   const [generatedSchedule, setGeneratedSchedule] = useState<any>(null);
 
+  // Convert month name to 1-12 number for ScheduleUpload
+  const selectedMonthNumber = MONTHS.indexOf(month) + 1;
+
   const handleGenerate = async () => {
     try {
       setGenerating(true);
@@ -333,7 +336,12 @@ export default function GenerateSchedule() {
             </div>
           </CardHeader>
           <CardContent>
-            <ScheduleUpload key={uploadedData ? 'uploaded' : 'empty'} onScheduleLoad={setUploadedData} />
+            <ScheduleUpload 
+              key={uploadedData ? 'uploaded' : 'empty'} 
+              onScheduleLoad={setUploadedData}
+              selectedMonth={selectedMonthNumber}
+              selectedYear={year}
+            />
             {uploadedData && (
               <div className="mt-4 p-3 bg-muted rounded-lg">
                 <p className="text-sm text-muted-foreground">

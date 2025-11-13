@@ -24,17 +24,20 @@ function getNextMonthAndYear() {
 
 interface ScheduleUploadProps {
   onScheduleLoad: (data: any) => void;
+  selectedMonth?: number;
+  selectedYear?: number;
 }
 
-export const ScheduleUpload = ({ onScheduleLoad }: ScheduleUploadProps) => {
+export const ScheduleUpload = ({ onScheduleLoad, selectedMonth: propMonth, selectedYear: propYear }: ScheduleUploadProps) => {
   const [isDragging, setIsDragging] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
   const [providers, setProviders] = useState<any[]>([]);
   
+  // Use props if provided, otherwise default to next month
   const { month: nextMonth, year: nextYear } = getNextMonthAndYear();
-  const [selectedMonth, setSelectedMonth] = useState(nextMonth);
-  const [selectedYear, setSelectedYear] = useState(nextYear);
+  const selectedMonth = propMonth ?? nextMonth;
+  const selectedYear = propYear ?? nextYear;
 
   useEffect(() => {
     const fetchProviders = async () => {
@@ -148,41 +151,29 @@ export const ScheduleUpload = ({ onScheduleLoad }: ScheduleUploadProps) => {
   const currentYear = new Date().getFullYear();
   const years = Array.from({ length: 5 }, (_, i) => currentYear + i);
 
+  // Show month/year selector only when used standalone (not as a prop-controlled component)
+  const showMonthYearSelector = propMonth === undefined && propYear === undefined;
+
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-4 mb-4">
-        <div className="flex items-center gap-2">
-          <Select value={selectedMonth.toString()} onValueChange={(v) => setSelectedMonth(parseInt(v))}>
-            <SelectTrigger className="w-[140px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {months.map((month, idx) => (
-                <SelectItem key={idx + 1} value={(idx + 1).toString()}>
-                  {month}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          <Select value={selectedYear.toString()} onValueChange={(v) => setSelectedYear(parseInt(v))}>
-            <SelectTrigger className="w-[100px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {years.map((year) => (
-                <SelectItem key={year} value={year.toString()}>
-                  {year}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+      {showMonthYearSelector && (
+        <div className="flex items-center gap-4 mb-4">
+          <div className="text-sm font-medium text-muted-foreground">
+            Template for: {months[selectedMonth - 1]} {selectedYear}
+          </div>
+          <Button onClick={handleDownloadTemplate} variant="default">
+            Download Template
+          </Button>
         </div>
+      )}
 
-        <Button onClick={handleDownloadTemplate} variant="default">
-          Download Template
-        </Button>
-      </div>
+      {!showMonthYearSelector && (
+        <div className="flex justify-end mb-4">
+          <Button onClick={handleDownloadTemplate} variant="default">
+            Download Template
+          </Button>
+        </div>
+      )}
       
       <Card
         className={`relative p-12 border-2 border-dashed transition-all ${
