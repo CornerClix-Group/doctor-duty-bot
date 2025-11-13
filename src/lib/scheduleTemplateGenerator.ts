@@ -6,6 +6,9 @@ const PP_COLORS = [
   "D9B4F7"  // Purple
 ];
 
+const SAT_COLOR = "EEEEEE";  // light gray
+const SUN_COLOR = "DDDDDD";  // darker gray
+
 /**
  * Compute a PP number (PP1–PP14) given the day offset and month starting PP.
  */
@@ -63,10 +66,17 @@ export function generateScheduleTemplate(
   // ---------------- Row 3 — Day-of-week ----------------
   const row3: any[] = ["Day", ""];
   const dayAbbr = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
+  const weekendFlags: string[] = [];
+
   for (let d = 1; d <= daysInMonth; d++) {
-    const dow = new Date(year, monthIndex, d).getDay();
+    const dow = new Date(year, monthIndex, d).getDay(); // 0 = Sun, 6 = Sat
     row3.push(dayAbbr[dow]);
+
+    if (dow === 0) weekendFlags.push("sun");
+    else if (dow === 6) weekendFlags.push("sat");
+    else weekendFlags.push("");
   }
+
   row3.push("");
   data.push(row3);
 
@@ -87,16 +97,35 @@ export function generateScheduleTemplate(
   // Build sheet
   const ws = XLSX.utils.aoa_to_sheet(data);
 
-  // ---------------- Apply Colors ----------------
+  // ---------------- Apply PP block colors ----------------
   for (let col = 2; col < 2 + daysInMonth; col++) {
-    const color = blockColors[col - 2];
+    const ppColor = blockColors[col - 2];
     const cellRef = XLSX.utils.encode_cell({ r: 0, c: col });
-
     if (!ws[cellRef]) continue;
 
     ws[cellRef].s = {
-      fill: { fgColor: { rgb: color } }
+      fill: { fgColor: { rgb: ppColor } }
     };
+  }
+
+  // ---------------- Apply weekend shading ----------------
+  const firstDataRow = 1; // Row index for Pattern (weekends start shading row2)
+  const lastRow = data.length - 1;
+
+  for (let col = 2; col < 2 + daysInMonth; col++) {
+    const weekendFlag = weekendFlags[col - 2];
+    if (!weekendFlag) continue;
+
+    const bg = weekendFlag === "sun" ? SUN_COLOR : SAT_COLOR;
+
+    for (let row = firstDataRow; row <= lastRow; row++) {
+      const cellRef = XLSX.utils.encode_cell({ r: row, c: col });
+
+      if (!ws[cellRef]) ws[cellRef] = { t: "s", v: "" };
+      if (!ws[cellRef].s) ws[cellRef].s = {};
+
+      ws[cellRef].s.fill = { fgColor: { rgb: bg } };
+    }
   }
 
   const wb = XLSX.utils.book_new();
