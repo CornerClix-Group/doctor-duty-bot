@@ -47,13 +47,13 @@ export async function generateScheduleTemplateBuffer(
   row1.push('');
   ws.addRow(row1);
 
-  // Row 2: Coverage # (7 for weekends, 8 for weekdays)
+  // Row 2: Coverage # (DEFAULT values - fully editable by user)
   const row2: any[] = ['Coverage #', ''];
   for (let d = 1; d <= daysInMonth; d++) {
     const dow = new Date(year, monthIndex, d).getDay(); // 0=Sun, 6=Sat
-    // Sundays & Saturdays → 7, Weekdays → 8
-    const coverageValue = (dow === 0 || dow === 6) ? 7 : 8;
-    row2.push(coverageValue);
+    // DEFAULT values: Sundays & Saturdays → 7, Weekdays → 8
+    const defaultCoverage = (dow === 0 || dow === 6) ? 7 : 8;
+    row2.push(defaultCoverage);
   }
   row2.push('');
   ws.addRow(row2);
