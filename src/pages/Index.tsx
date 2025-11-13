@@ -1,129 +1,88 @@
-import { useState } from 'react';
-import { Activity, LayoutGrid, Table } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { ScheduleUpload } from '@/components/ScheduleUpload';
-import { ScheduleValidation } from '@/components/ScheduleValidation';
-import { SchedulingEngine } from '@/components/SchedulingEngine';
-import { ScheduleTable } from '@/components/ScheduleTable';
-import { ScheduleCalendar } from '@/components/ScheduleCalendar';
-import { ProviderStats } from '@/components/ProviderStats';
+// ============================================================================
+// Index.tsx — FINAL CORRECTED PIPELINE
+// ============================================================================
 
-const Index = () => {
-  const [scheduleData, setScheduleData] = useState<any>(null);
-  const [validationConfirmed, setValidationConfirmed] = useState(false);
-  const [generatedSchedule, setGeneratedSchedule] = useState<any>(null);
-  const [viewMode, setViewMode] = useState<'calendar' | 'table'>('calendar');
+import React, { useState } from "react";
+import * as XLSX from "xlsx";
+import { ValidationPanel } from "@/components/ValidationPanel";
+import { SchedulingEngine } from "@/components/SchedulingEngine";
+
+export default function IndexPage() {
+  const [parsedData, setParsedData] = useState(null);
+  const [validationErrors, setValidationErrors] = useState([]);
+  const [validationWarnings, setValidationWarnings] = useState([]);
+  const [validated, setValidated] = useState(false);
+  const [generatedSchedule, setGeneratedSchedule] = useState(null);
+
+  const handleUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const data = await file.arrayBuffer();
+    const workbook = XLSX.read(data, { type: "array" });
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+
+    const json = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+
+    // Send raw workbook to backend for parsing + validation
+    const base64 = XLSX.write(workbook, { type: "base64" });
+
+    const response = await fetch(
+      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-schedule-v2`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          // Auth auto-inserted by Supabase client for backend
+        },
+        body: JSON.stringify({ file: base64, mode: "validateOnly" })
+      }
+    );
+
+    const result = await response.json();
+
+    if (!response.ok) {
+      setValidationErrors(result.validation_errors || []);
+      setValidationWarnings(result.validation_warnings || []);
+      setValidated(false);
+      return;
+    }
+
+    // Valid template; save parsed JSON
+    setParsedData(result.parsedSchedule);
+    setValidationWarnings(result.validation_warnings || []);
+    setValidated(true);
+  };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5">
-      {/* Header */}
-      <header className="border-b border-border/40 bg-card/50 backdrop-blur-sm sticky top-0 z-50">
-        <div className="container mx-auto px-4 py-6">
-          <div className="flex items-center gap-3">
-            <div className="rounded-xl bg-gradient-to-br from-primary to-secondary p-3 shadow-lg">
-              <Activity className="h-8 w-8 text-white" />
-            </div>
-            <div>
-              <h1 className="text-3xl font-bold text-foreground">
-                MedScheduler AI
-              </h1>
-              <p className="text-sm text-muted-foreground">
-                Intelligent Physician Scheduling Engine
-              </p>
-            </div>
-          </div>
-        </div>
-      </header>
+    <div className="p-6">
+      <h1 className="text-3xl font-bold mb-4">Schedule Generator</h1>
 
-      {/* Main Content */}
-      <main className="container mx-auto px-4 py-8">
-        <div className="space-y-8">
-          {/* Upload Section */}
-          {!scheduleData && (
-            <div className="max-w-3xl mx-auto">
-              <ScheduleUpload onScheduleLoad={setScheduleData} />
-            </div>
-          )}
+      {/* Upload */}
+      <input type="file" onChange={handleUpload} />
 
-          {/* Validation Section */}
-          {scheduleData && !validationConfirmed && (
-            <div className="max-w-4xl mx-auto">
-              <ScheduleValidation 
-                scheduleData={scheduleData}
-                onConfirm={() => setValidationConfirmed(true)}
-                onCancel={() => {
-                  setScheduleData(null);
-                  setValidationConfirmed(false);
-                }}
-              />
-            </div>
-          )}
+      {/* Validation Results */}
+      {(validationErrors.length > 0 || validationWarnings.length > 0) && (
+        <ValidationPanel
+          errors={validationErrors}
+          warnings={validationWarnings}
+        />
+      )}
 
-          {/* Processing Section */}
-          {scheduleData && validationConfirmed && !generatedSchedule && (
-            <div className="max-w-3xl mx-auto">
-              <SchedulingEngine />
-            </div>
-          )}
+      {/* Scheduling Phase */}
+      {validated && parsedData && (
+        <SchedulingEngine
+          scheduleData={parsedData}
+          onScheduleGenerated={(sched) => setGeneratedSchedule(sched)}
+        />
+      )}
 
-          {/* Results Section */}
-          {generatedSchedule && (
-            <div className="space-y-8">
-              {/* View Toggle */}
-              <div className="flex justify-end gap-2">
-                <Button
-                  variant={viewMode === 'calendar' ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => setViewMode('calendar')}
-                >
-                  <LayoutGrid className="h-4 w-4 mr-2" />
-                  Calendar
-                </Button>
-                <Button
-                  variant={viewMode === 'table' ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => setViewMode('table')}
-                >
-                  <Table className="h-4 w-4 mr-2" />
-                  List
-                </Button>
-              </div>
-
-              {viewMode === 'calendar' ? (
-                <ScheduleCalendar 
-                  schedule={generatedSchedule.schedule}
-                  month={generatedSchedule.month}
-                />
-              ) : (
-                <ScheduleTable 
-                  schedule={generatedSchedule.schedule}
-                  month={generatedSchedule.month}
-                />
-              )}
-              
-              <ProviderStats 
-                providerTotals={generatedSchedule.provider_totals}
-              />
-            </div>
-          )}
-        </div>
-      </main>
-
-      {/* Footer */}
-      <footer className="mt-16 border-t border-border/40 bg-card/30 backdrop-blur-sm">
-        <div className="container mx-auto px-4 py-8">
-          <div className="text-center space-y-2">
-            <p className="text-sm text-muted-foreground">
-              Powered by advanced AI scheduling algorithms
-            </p>
-            <p className="text-xs text-muted-foreground">
-              Ensuring optimal staff distribution while respecting all provider constraints
-            </p>
-          </div>
-        </div>
-      </footer>
+      {/* Output */}
+      {generatedSchedule && (
+        <pre className="mt-6 bg-gray-100 p-4 rounded">
+          {JSON.stringify(generatedSchedule, null, 2)}
+        </pre>
+      )}
     </div>
   );
-};
-
-export default Index;
+}
