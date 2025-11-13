@@ -40,16 +40,22 @@ export const ScheduleUpload = ({ onScheduleLoad, selectedMonth: propMonth, selec
   const selectedYear = propYear ?? nextYear;
 
   useEffect(() => {
-    const fetchProviders = async () => {
-      const { data } = await supabase
-        .from('provider_profiles')
-        .select('first_name, last_name')
+    async function loadProviders() {
+      const { data, error } = await supabase
+        .from("provider_profiles")
+        .select("id, first_name, last_name")
         .order('last_name');
-      
-      if (data) setProviders(data);
-    };
-    
-    fetchProviders();
+
+      if (error) {
+        console.error("Error loading providers:", error);
+        setError("Failed to load providers. Please refresh the page.");
+        return;
+      }
+
+      setProviders(data || []);
+    }
+
+    loadProviders();
   }, []);
 
   const handleFile = useCallback((file: File) => {
