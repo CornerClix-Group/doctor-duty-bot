@@ -67,13 +67,17 @@ export function validateSchedule(parsed: any, mergedProviders: any[]) {
       // Skip blank (allowed)
       if (!raw) continue;
 
+      // Standalone X means OFF
+      const rawUpper = raw.toUpperCase();
+      if (rawUpper === "X") continue;
+
       // OFF block?
-      if (OFF_CODES.has(raw)) continue;
+      if (OFF_CODES.has(rawUpper)) continue;
 
       // Preassigned shift?
-      if (SHIFT_CODES.has(raw)) {
+      if (SHIFT_CODES.has(rawUpper)) {
         // extra: ensure provider is allowed this day under hard rules
-        validatePreassignedShift(nameKey, raw, date, ruleSet, errors);
+        validatePreassignedShift(nameKey, rawUpper, date, ruleSet, errors);
         continue;
       }
 
@@ -155,10 +159,15 @@ function validateConstraintCode(raw: string, providerName: string, date: string,
   const parts = raw.toLowerCase().split("/");
 
   for (let part of parts) {
-    // strip trailing x
+    part = part.trim();
+    
+    // If part is just "x", it's valid (means OFF allowed)
+    if (part === "x" || part === "") continue;
+    
+    // Strip trailing x from codes like "10x" or "amx"
     part = part.replace(/x$/, "").trim();
 
-    if (!CONSTRAINT_TOKENS.has(part)) {
+    if (part && !CONSTRAINT_TOKENS.has(part)) {
       errors.push(
         `Invalid constraint code '${raw}' for provider '${providerName}' on ${date} — token '${part}' not recognized.`
       );

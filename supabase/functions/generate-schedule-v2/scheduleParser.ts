@@ -75,7 +75,8 @@ function parseConstraintCode(value: string): string[] | null {
 function safeCellValue(cell: any): string {
   if (!cell) return "";
   if (cell.v === undefined || cell.v === null) return "";
-  return String(cell.v).trim();
+  // Normalize to uppercase for shift codes
+  return String(cell.v).trim().toUpperCase();
 }
 
 // ---------------------------------------------------------------------------
@@ -193,8 +194,13 @@ export function parseSchedule(workbook: XLSX.WorkBook) {
       let assigned: string | null = null;
       let constraint: string[] | null = null;
 
+      // Standalone X means OFF
+      if (raw === "X") {
+        locked = true;
+        assigned = "OFF";
+      }
       // OFF block?
-      if (OFF_CODES.has(raw)) {
+      else if (OFF_CODES.has(raw)) {
         locked = true;
         assigned = "OFF";
       }
