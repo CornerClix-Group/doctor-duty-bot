@@ -1,8 +1,9 @@
-import { useCallback, useState } from 'react';
-import { Upload, FileSpreadsheet, AlertCircle, Download } from 'lucide-react';
+import { useCallback, useState, useEffect } from 'react';
+import { Upload, FileSpreadsheet, AlertCircle } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import * as XLSX from 'xlsx';
 import { parseScheduleData } from '@/lib/scheduleParser';
 import { generateScheduleTemplate } from '@/lib/scheduleTemplateGenerator';
@@ -10,15 +11,15 @@ import { supabase } from '@/integrations/supabase/client';
 
 function getNextMonthAndYear() {
   const now = new Date();
-  let monthIndex = now.getMonth() + 1; // next month
+  let month = now.getMonth() + 1; // 1-12 for UI
   let year = now.getFullYear();
 
-  if (monthIndex > 11) {
-    monthIndex = 0;
+  if (month > 12) {
+    month = 1;
     year += 1;
   }
 
-  return { monthIndex, year };
+  return { month, year };
 }
 
 interface ScheduleUploadProps {
@@ -29,6 +30,24 @@ export const ScheduleUpload = ({ onScheduleLoad }: ScheduleUploadProps) => {
   const [isDragging, setIsDragging] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
+  const [providers, setProviders] = useState<any[]>([]);
+  
+  const { month: nextMonth, year: nextYear } = getNextMonthAndYear();
+  const [selectedMonth, setSelectedMonth] = useState(nextMonth);
+  const [selectedYear, setSelectedYear] = useState(nextYear);
+
+  useEffect(() => {
+    const fetchProviders = async () => {
+      const { data } = await supabase
+        .from('provider_profiles')
+        .select('first_name, last_name')
+        .order('last_name');
+      
+      if (data) setProviders(data);
+    };
+    
+    fetchProviders();
+  }, []);
 
   const handleFile = useCallback((file: File) => {
     setError(null);
@@ -83,36 +102,26 @@ export const ScheduleUpload = ({ onScheduleLoad }: ScheduleUploadProps) => {
 
   const handleDownloadTemplate = async () => {
     try {
-      // Get next month and year
-      const { monthIndex, year } = getNextMonthAndYear();
+      const monthIndex = selectedMonth - 1; // Convert 1-12 to 0-11
+      const year = selectedYear;
 
-      // Fetch provider names from database
-      const { data: providers } = await supabase
-        .from('providers')
-        .select('name')
-        .eq('active', true)
-        .order('name');
-
-      const providerNames = providers?.map(p => p.name) ?? [];
+      const providerNames =
+        providers?.map((p) => `${p.first_name} ${p.last_name}`.trim()) ?? [];
 
       if (!providerNames.length) {
         setError('No providers found. Please add providers first.');
         return;
       }
 
-      // Generate workbook
       const wb = generateScheduleTemplate(monthIndex, year, providerNames);
 
-      // Convert to array buffer
       const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
 
-      // Generate filename
-      const monthName = new Date(year, monthIndex, 1)
-        .toLocaleString('default', { month: 'long' });
-
+      const monthName = new Date(year, monthIndex, 1).toLocaleString('default', {
+        month: 'long',
+      });
       const filename = `ScheduleTemplate-${monthName}-${year}.xlsx`;
 
-      // Create and download blob
       const blob = new Blob([wbout], {
         type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       });
@@ -131,16 +140,48 @@ export const ScheduleUpload = ({ onScheduleLoad }: ScheduleUploadProps) => {
     }
   };
 
+  const months = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
+  ];
+
+  const currentYear = new Date().getFullYear();
+  const years = Array.from({ length: 5 }, (_, i) => currentYear + i);
+
   return (
     <div className="space-y-4">
-      <div className="flex justify-end mb-4">
-        <button
-          type="button"
-          onClick={handleDownloadTemplate}
-          className="px-4 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700"
-        >
-          Download Next Month Template
-        </button>
+      <div className="flex items-center gap-4 mb-4">
+        <div className="flex items-center gap-2">
+          <Select value={selectedMonth.toString()} onValueChange={(v) => setSelectedMonth(parseInt(v))}>
+            <SelectTrigger className="w-[140px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {months.map((month, idx) => (
+                <SelectItem key={idx + 1} value={(idx + 1).toString()}>
+                  {month}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <Select value={selectedYear.toString()} onValueChange={(v) => setSelectedYear(parseInt(v))}>
+            <SelectTrigger className="w-[100px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {years.map((year) => (
+                <SelectItem key={year} value={year.toString()}>
+                  {year}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <Button onClick={handleDownloadTemplate} variant="default">
+          Download Template
+        </Button>
       </div>
       
       <Card
