@@ -284,11 +284,31 @@ class HardScheduler {
   solve() {
     console.log("Starting HardScheduler.solve()");
     
+    // Analyze capacity before starting
+    const totalCapacity = this.providers.reduce((sum, p) => sum + p.target_shifts, 0);
+    const totalRequired = this.days.length * 7; // Approximate
+    console.log(`Capacity: ${totalCapacity} shifts available, ~${totalRequired} required`);
+    
+    // Log provider capacities
+    this.providers.forEach(p => {
+      console.log(`${p.name}: target=${p.target_shifts}, weekend_quota=${p.weekend_quota}`);
+    });
+    
     // First, apply all locked assignments
     this.applyLockedAssignments();
     
+    // Log locked counts
+    this.providers.forEach(p => {
+      const locked = [...(this.assignments.get(p.name)?.values() || [])].filter(s => !!s).length;
+      if (locked > 0) {
+        console.log(`${p.name} has ${locked} locked shifts`);
+      }
+    });
+    
     if (!this.backtrack(0)) {
-      throw new Error("Cannot satisfy hard scheduling constraints.");
+      // Provide detailed error about what failed
+      const failureDetails = this.analyzeFailure();
+      throw new Error(`Cannot satisfy hard scheduling constraints. ${failureDetails}`);
     }
 
     this.assignCallShifts();
@@ -299,6 +319,14 @@ class HardScheduler {
       providerTotals: this.computeTotals(),
       warnings: []
     };
+  }
+  
+  analyzeFailure(): string {
+    const capacityByProvider = this.providers.map(p => {
+      const assigned = [...(this.assignments.get(p.name)?.values() || [])].filter(s => !!s).length;
+      return `${p.name}: ${assigned}/${p.target_shifts}`;
+    });
+    return `Provider assignments: ${capacityByProvider.join(', ')}`;
   }
 
   applyLockedAssignments() {
@@ -334,10 +362,26 @@ class HardScheduler {
     const shift = needed[i];
 
     const order = shift === "D1" ? this.D1Priority() : [...this.providers];
+    
+    let eligibleCount = 0;
+    const ineligibleReasons: string[] = [];
 
     for (const p of order) {
       if (this.assignments.get(p.name)?.has(dateStr)) continue;
-      if (!this.eligible(p.name, dateStr, shift)) continue;
+      
+      const isEligible = this.eligible(p.name, dateStr, shift);
+      if (!isEligible) {
+        // Track why providers are ineligible (for logging)
+        const currentShifts = [...(this.assignments.get(p.name)?.values() || [])]
+          .filter(s => s && !['X', 'L', 'HL'].includes(s)).length;
+        const prov = this.providers.find(pr => pr.name === p.name);
+        if (currentShifts >= (prov?.target_shifts || 0)) {
+          ineligibleReasons.push(`${p.name}: at capacity (${currentShifts}/${prov?.target_shifts})`);
+        }
+        continue;
+      }
+      
+      eligibleCount++;
 
       this.assignments.get(p.name)?.set(dateStr, shift);
 
@@ -346,6 +390,11 @@ class HardScheduler {
       }
 
       this.assignments.get(p.name)?.delete(dateStr);
+    }
+    
+    // Log failure for this shift
+    if (eligibleCount === 0) {
+      console.error(`Failed to assign ${shift} on ${dateStr}. Reasons: ${ineligibleReasons.slice(0, 5).join('; ')}`);
     }
 
     return false;
