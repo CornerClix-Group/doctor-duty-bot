@@ -162,6 +162,11 @@ export const ScheduleUpload = ({ onScheduleLoad, selectedMonth: propMonth, selec
         if (lastPP !== null) {
           startingPP = lastPP === 14 ? 1 : lastPP + 1;
         }
+      } else {
+        // SPECIAL CASE: January 2026 must start at PP5
+        if (selectedMonth === 1 && selectedYear === 2026) {
+          startingPP = 5;
+        }
       }
 
       const providerNames = providers.map((p) =>
