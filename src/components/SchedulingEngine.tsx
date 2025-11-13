@@ -40,44 +40,51 @@ export const SchedulingEngine = ({ scheduleData, onScheduleGenerated }: Scheduli
         throw new Error("Please upload a schedule file first before generating.");
       }
 
-      // Fetch provider data from the providers table
-      const { data: providersData, error: providersError } = await supabase
-        .from('providers')
+      // Fetch provider_profiles and join with provider_constraints
+      const { data: profilesData, error: profilesError } = await supabase
+        .from('provider_profiles')
         .select(`
           *,
-          provider_constraints (*)
-        `)
-        .eq('active', true);
+          provider_constraints!provider_constraints_provider_id_fkey (*)
+        `);
 
-      if (providersError) {
-        throw new Error(`Failed to fetch providers: ${providersError.message}`);
+      if (profilesError) {
+        throw new Error(`Failed to fetch provider profiles: ${profilesError.message}`);
       }
 
-      if (!providersData || providersData.length === 0) {
-        throw new Error("No active providers found. Please add providers first.");
+      if (!profilesData || profilesData.length === 0) {
+        throw new Error("No provider profiles found. Please add providers first.");
       }
 
-      // Transform to match edge function expected format
-      const provider_profiles = providersData.map((p: any) => {
-        const constraints = Array.isArray(p.provider_constraints) 
-          ? p.provider_constraints[0] 
-          : p.provider_constraints;
+      // Transform and merge: provider_constraints overrides provider_profiles
+      const provider_profiles = profilesData.map((profile: any) => {
+        const constraints = Array.isArray(profile.provider_constraints) 
+          ? profile.provider_constraints[0] 
+          : profile.provider_constraints;
         
+        // Merge with constraints taking precedence for overlapping fields
         return {
-          first_name: p.name.split(' ')[0],
-          last_name: p.name.split(' ').slice(1).join(' '),
-          email: p.email || '',
-          role: 'provider',
-          allowed_shifts: constraints?.allowed_shifts || [],
+          first_name: profile.first_name,
+          last_name: profile.last_name,
+          email: profile.email || '',
+          role: profile.role || 'provider',
+          // allowed_shifts: constraints overrides profile
+          allowed_shifts: constraints?.allowed_shifts || profile.allowed_shifts || [],
           rules: {
             disallowed_shifts: constraints?.disallowed_shifts || [],
-            preferred_shifts: constraints?.preferred_shifts || [],
-            rest_hours: constraints?.rest_hours || 12,
-            n_recovery_days: constraints?.n_recovery_days || 2,
-            block_pattern: constraints?.block_pattern || null,
+            // preferred_shifts: constraints overrides profile
+            preferred_shifts: constraints?.preferred_shifts || profile.preferred_shifts || [],
+            // rest_hours: constraints overrides profile
+            rest_hours: constraints?.rest_hours ?? profile.rest_hours ?? 12,
+            // n_recovery_days: constraints overrides profile
+            n_recovery_days: constraints?.n_recovery_days ?? profile.n_recovery_days ?? 2,
+            // block_pattern: constraints overrides profile
+            block_pattern: constraints?.block_pattern || profile.block_pattern || null,
             max_consecutive_N: constraints?.max_consecutive_n || null,
-            saturday_restrictions: constraints?.saturday_restrictions || null,
-            sunday_restrictions: constraints?.sunday_restrictions || null,
+            // saturday_restrictions: constraints overrides profile
+            saturday_restrictions: constraints?.saturday_restrictions || profile.saturday_restrictions || null,
+            // sunday_restrictions: constraints overrides profile
+            sunday_restrictions: constraints?.sunday_restrictions || profile.sunday_restrictions || null,
           }
         };
       });
