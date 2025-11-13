@@ -1,76 +1,77 @@
 import * as XLSX from "xlsx";
 
 /**
- * Export a completed schedule into a true Excel grid.
+ * Export a completed schedule into the Excel template.
  *
- * @param schedule    The final schedule JSON { providerName: { date: shift } }
- * @param templateWb  The workbook created using generateScheduleTemplate()
- * @param providers   Provider rows from parser (to preserve weekend_quota + target_shifts)
+ * @param schedule    Final schedule JSON { providerName: { dateISO: shift } }
+ * @param templateWb  Workbook created by generateScheduleTemplate()
+ * @param providers   Providers from parser (Excel provider rows)
  */
 export function exportFinalScheduleToExcel(
   schedule: Record<string, Record<string, string>>,
   templateWb: XLSX.WorkBook,
-  providers: Array<{ name: string }>
+  providers: any[]
 ): XLSX.WorkBook {
   const ws = templateWb.Sheets["Schedule"];
   if (!ws) throw new Error("Template 'Schedule' sheet missing.");
 
-  // Determine providers row start — template rows:
-  // Row 1 = Month
-  // Row 2 = Pattern
-  // Row 3 = Day
-  // Row 4 = Date
-  const PROVIDER_START_ROW = 5; // 1-indexed in Excel, 0-indexed as r=4
+  // Template layout:
+  // A = provider name
+  // B = weekend quota
+  // C.. = daily columns (start index = 2)
+  const FIRST_DAY_COLUMN = 2; // Column C (0-indexed: A=0, B=1, C=2)
 
-  // Assemble date → column mapping from template Row 4
-  const range = XLSX.utils.decode_range(ws["!ref"]!);
+  // Locate total range
+  const range = XLSX.utils.decode_range(ws["!ref"]);
+
+  // ========= 1. Build mapping: dateISO → column =========
+  //
+  // Dates are in Row 4 (0-based row index = 3)
+  //
+  const DATE_ROW = 3;
   const dateColumnMap: Record<string, number> = {};
-  const dateRowIndex = 3; // Row 4 (0-based index)
 
-  for (let col = 1; col <= range.e.c; col++) {
-    const cell = ws[XLSX.utils.encode_cell({ r: dateRowIndex, c: col })];
+  const monthCell = ws["A1"]?.v;
+  const [monthName, yearString] = monthCell.split(" ");
+  const year = parseInt(yearString);
+  const monthIndex = new Date(`${monthName} 1, ${year}`).getMonth();
+
+  for (let col = FIRST_DAY_COLUMN; col <= range.e.c; col++) {
+    const cell = ws[XLSX.utils.encode_cell({ r: DATE_ROW, c: col })];
     if (!cell?.v) continue;
 
-    const day = cell.v;
-    const monthCell = ws["A1"];
-    if (!monthCell?.v) continue;
-    
-    const parts = String(monthCell.v).split(" ");
-    const monthName = parts[0];
-    const year = parseInt(parts[1]);
-
-    const monthIndex = new Date(`${monthName} 1, ${year}`).getMonth();
-    const iso = new Date(year, monthIndex, day).toISOString().slice(0, 10);
+    const day = Number(cell.v);
+    const iso = new Date(year, monthIndex, day)
+      .toISOString()
+      .slice(0, 10);
 
     dateColumnMap[iso] = col;
   }
 
-  // Build provider name → row number map
+  // ========= 2. Build provider name → row mapping =========
+  //
+  // Provider rows start at row 5 → Excel row index = 4
+  //
+  const PROVIDER_START_ROW = 4; // Row 5 (0-indexed r=4)
   const providerRowMap: Record<string, number> = {};
 
   providers.forEach((prov, idx) => {
-    providerRowMap[prov.name] = PROVIDER_START_ROW + idx; 
-    // PROVIDER_START_ROW is already 1-indexed (row 5)
+    providerRowMap[prov.name] = PROVIDER_START_ROW + idx;
   });
 
-  // Now write schedule shifts into the Excel sheet
-  Object.keys(schedule).forEach((providerName) => {
-    const rowNum = providerRowMap[providerName];
-    if (!rowNum) return; // provider not in template
+  // ========= 3. Fill in assigned shifts =========
+  Object.entries(schedule).forEach(([providerName, dayMap]) => {
+    const row = providerRowMap[providerName];
+    if (row === undefined) return;
 
-    const assignments = schedule[providerName];
-
-    Object.entries(assignments).forEach(([date, shift]) => {
+    Object.entries(dayMap).forEach(([date, shift]) => {
       const col = dateColumnMap[date];
-      if (col === undefined) return; // out of template month range
+      if (!col) return; // date not in month
 
-      const cellRef = XLSX.utils.encode_cell({ r: rowNum - 1, c: col });
+      const cellRef = XLSX.utils.encode_cell({ r: row, c: col });
       ws[cellRef] = { t: "s", v: shift };
     });
   });
-
-  // Recompute sheet range
-  ws["!ref"] = XLSX.utils.encode_range(range);
 
   return templateWb;
 }
