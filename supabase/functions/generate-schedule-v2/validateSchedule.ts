@@ -87,9 +87,20 @@ export function validateSchedule(parsed: any, mergedProviders: any[]) {
         continue;
       }
 
-      // If none matched → invalid token
+      // If none matched → invalid token with helpful suggestion
+      let suggestion = "";
+      if (rawUpper === "A") {
+        suggestion = " Did you mean 'A10' (Admin shift)?";
+      } else if (rawUpper === "AM") {
+        suggestion = " Did you mean 'FT AM' or use 'am' as a constraint code?";
+      } else if (rawUpper === "PM") {
+        suggestion = " Did you mean 'FT PM' or use 'pm' as a constraint code?";
+      } else if (rawUpper === "MID") {
+        suggestion = " Did you mean 'MIDA' or 'MIDB'?";
+      }
+      
       errors.push(
-        `Invalid entry '${raw}' for provider '${prov.name}' on ${date}.`
+        `Invalid entry '${raw}' for provider '${prov.name}' on ${date}.${suggestion}`
       );
     }
   }
