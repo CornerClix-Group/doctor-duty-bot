@@ -117,35 +117,46 @@ export function validateSchedule(parsed: any, mergedProviders: any[]) {
   for (let date in coverage_pattern) {
     const needed = coverage_pattern[date];
 
-    // Do we have enough candidates in general?
+    // Track available and unavailable providers
     let availableCount = 0;
+    const unavailableProviders: string[] = [];
+    const availableProviders: string[] = [];
 
     for (let prov of providerDays) {
       const day = prov.days.find((d: any) => d.date === date);
       if (!day) continue;
 
       // Off blocks reduce availability
-      if (day.assigned === "OFF") continue;
+      if (day.assigned === "OFF") {
+        unavailableProviders.push(`${prov.name} (${day.value || "OFF"})`);
+        continue;
+      }
 
       // Preassigned shift counts as coverage
       if (day.assigned) {
         availableCount += 1;
+        availableProviders.push(`${prov.name} (preassigned: ${day.assigned})`);
         continue;
       }
 
       // Constraint code means provider is available (Option 2)
       if (day.constraint) {
         availableCount += 1;
+        availableProviders.push(`${prov.name} (constrained)`);
         continue;
       }
 
       // Blank → use provider full rules
       availableCount += 1;
+      availableProviders.push(prov.name);
     }
 
     if (availableCount < needed) {
+      const shortfall = needed - availableCount;
       errors.push(
-        `Coverage conflict on ${date}: Need ${needed}, but only ${availableCount} providers can work.`
+        `Coverage conflict on ${date}: Need ${needed} providers, but only ${availableCount} available (short ${shortfall}). ` +
+        `Unavailable: ${unavailableProviders.join(", ") || "none"}. ` +
+        `Fix: Remove OFF status from ${shortfall} provider(s) on this date.`
       );
     }
   }
