@@ -4,6 +4,9 @@ import { Badge } from '@/components/ui/badge';
 import { Edit, Trash2, Mail as MailIcon, Send, User } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Provider } from '@/pages/Providers';
+import { supabase } from '@/integrations/supabase/client';
+import { useToast } from '@/hooks/use-toast';
+import { Switch } from '@/components/ui/switch';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -22,9 +25,36 @@ interface ProviderListProps {
   onEdit: (provider: Provider) => void;
   onDelete: (id: string) => void;
   onSendInvite: (provider: Provider) => void;
+  onRefresh: () => void;
 }
 
-export const ProviderList = ({ providers, loading, onEdit, onDelete, onSendInvite }: ProviderListProps) => {
+export const ProviderList = ({ providers, loading, onEdit, onDelete, onSendInvite, onRefresh }: ProviderListProps) => {
+  const { toast } = useToast();
+
+  const handleActiveToggle = async (provider: Provider, checked: boolean) => {
+    try {
+      const { error } = await supabase
+        .from('provider_profiles')
+        .update({ active: checked })
+        .eq('id', provider.id);
+
+      if (error) throw error;
+
+      toast({
+        title: "Success",
+        description: `Provider ${checked ? 'activated' : 'deactivated'} successfully`,
+      });
+
+      onRefresh();
+    } catch (error: any) {
+      console.error('Error updating provider status:', error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update provider status",
+        variant: "destructive",
+      });
+    }
+  };
   if (loading) {
     return (
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -73,9 +103,18 @@ export const ProviderList = ({ providers, loading, onEdit, onDelete, onSendInvit
                   {provider.email || 'No email'}
                 </CardDescription>
               </div>
-              <Badge variant="default">
-                {provider.role || 'Provider'}
-              </Badge>
+              <div className="flex flex-col items-end gap-2">
+                <Badge variant="default">
+                  {provider.role || 'Provider'}
+                </Badge>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground">Active</span>
+                  <Switch
+                    checked={provider.active ?? true}
+                    onCheckedChange={(checked) => handleActiveToggle(provider, checked)}
+                  />
+                </div>
+              </div>
             </div>
           </CardHeader>
           <CardContent className="space-y-4">

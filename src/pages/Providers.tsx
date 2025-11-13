@@ -16,6 +16,7 @@ export interface Provider {
   last_name: string;
   email: string;
   role: string | null;
+  active: boolean | null;
   rest_hours: number | null;
   n_recovery_days: number | null;
   allowed_shifts: string[] | null;
@@ -204,6 +205,7 @@ const Providers = () => {
             onEdit={handleEditProvider}
             onDelete={handleDeleteProvider}
             onSendInvite={handleSendInvite}
+            onRefresh={fetchProviders}
           />
 
           {/* Provider Dialog */}
