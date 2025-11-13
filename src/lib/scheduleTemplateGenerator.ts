@@ -1,47 +1,36 @@
 import * as XLSX from "xlsx";
 
-const FED_PP_START: Record<number, { month: number; day: number }> = {
-  // OPM leave year = first full biweekly PP start
-  // 2024–2030 pulled from OPM leave year fact sheet
-  2024: { month: 0, day: 14 }, // Jan 14, 2024
-  2025: { month: 0, day: 12 }, // Jan 12, 2025
-  2026: { month: 0, day: 11 }, // Jan 11, 2026
-  2027: { month: 0, day: 10 }, // Jan 10, 2027
-  2028: { month: 0, day: 9 },  // Jan 9, 2028
-  2029: { month: 0, day: 7 },  // Jan 7, 2029
-  2030: { month: 0, day: 6 },  // Jan 6, 2030
-};
+//
+// CONFIG:
+// Anchor: Jan 1, 2026 = PP5
+//
+const ANCHOR_DATE = new Date(2026, 0, 1); // Jan 1, 2026
+const ANCHOR_PP = 5; // PP5 on Jan 1, 2026
 
-function getFederalPayPeriod(date: Date): number {
-  const year = date.getFullYear();
-  const def = FED_PP_START[year];
+//
+// Compute PP1–PP14 repeating windows
+//
+function computePP(date: Date): number {
+  const MS_DAY = 1000 * 60 * 60 * 24;
+  const diffDays = Math.floor((date.getTime() - ANCHOR_DATE.getTime()) / MS_DAY);
 
-  const msDay = 1000 * 60 * 60 * 24;
-
-  if (!def) {
-    // Fallback: naive 26 x 14-day periods starting Jan 1
-    const start = new Date(year, 0, 1);
-    const diffDays = Math.floor((date.getTime() - start.getTime()) / msDay);
-    const ppIndex = Math.floor(diffDays / 14);
-    return ((ppIndex % 26) + 1);
-  }
-
-  const start = new Date(year, def.month, def.day);
-  let diffDays = Math.floor((date.getTime() - start.getTime()) / msDay);
-
-  if (diffDays < 0) {
-    // Dates before the first PP of the year: treat as PP 26 of prior year
-    return 26;
-  }
-
-  const ppIndex = Math.floor(diffDays / 14);
-  return ((ppIndex % 26) + 1);
+  const raw = ((diffDays + (ANCHOR_PP - 1)) % 14);
+  return raw >= 0 ? raw + 1 : ((raw + 14) % 14) + 1;
 }
 
-/**
- * Generate a schedule template workbook for a given month/year.
- * Month index is 0-based (0 = January, 11 = December).
- */
+//
+// PP Color map
+//
+function ppColor(pp: number): string {
+  if (pp >= 1 && pp <= 4) return "blue";
+  if (pp >= 5 && pp <= 9) return "yellow";
+  if (pp >= 10 && pp <= 14) return "purple";
+  return "";
+}
+
+//
+// Generate Template with PP1..PP14 repeating, color coded
+//
 export function generateScheduleTemplate(
   monthIndex: number,
   year: number,
@@ -55,42 +44,25 @@ export function generateScheduleTemplate(
 
   const data: any[][] = [];
 
-  // -----------------------------
-  // Row 1: Month + PP headers
-  // A1 = "January 2026"
-  // B1 = "" (blank)
-  // C1.. = PP#
-  // -----------------------------
-  const row1: any[] = [`${monthName} ${year}`, ""];
+  // Row 1
+  const row1 = [`${monthName} ${year}`, ""];
   for (let d = 1; d <= daysInMonth; d++) {
     const date = new Date(year, monthIndex, d);
-    const ppNum = getFederalPayPeriod(date);
-    row1.push(`PP${ppNum}`);
+    const pp = computePP(date);
+    row1.push(`PP${pp}`);
   }
-  row1.push(""); // trailing padding
+  row1.push("");
   data.push(row1);
 
-  // -----------------------------
-  // Row 2: Pattern
-  // A2 = "Pattern"
-  // B2 = "" (blank)
-  // C2.. = 7 (default) or edited later
-  // -----------------------------
+  // Row 2 (Pattern)
   const row2: any[] = ["Pattern", ""];
-  for (let d = 1; d <= daysInMonth; d++) {
-    row2.push(7);
-  }
+  for (let d = 1; d <= daysInMonth; d++) row2.push(7);
   row2.push("");
   data.push(row2);
 
-  // -----------------------------
-  // Row 3: Day-of-week
-  // A3 = "Day"
-  // B3 = "" (blank)
-  // C3.. = Su/Mo/Tu...
-  // -----------------------------
-  const row3: any[] = ["Day", ""];
-  const dayAbbr = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
+  // Row 3 (Day)
+  const row3 = ["Day", ""];
+  const dayAbbr = ["Su","Mo","Tu","We","Th","Fr","Sa"];
   for (let d = 1; d <= daysInMonth; d++) {
     const dow = new Date(year, monthIndex, d).getDay();
     row3.push(dayAbbr[dow]);
@@ -98,40 +70,49 @@ export function generateScheduleTemplate(
   row3.push("");
   data.push(row3);
 
-  // -----------------------------
-  // Row 4: Date numbers
-  // A4 = "Date"
-  // B4 = "" (blank)
-  // C4.. = 1..days
-  // -----------------------------
+  // Row 4 (Date)
   const row4: any[] = ["Date", ""];
-  for (let d = 1; d <= daysInMonth; d++) {
-    row4.push(d);
-  }
+  for (let d = 1; d <= daysInMonth; d++) row4.push(d);
   row4.push("");
   data.push(row4);
 
-  // -----------------------------
   // Provider rows
-  // A = name
-  // B = weekend_quota (0 default)
-  // C.. = blank per day
-  // last col = target_shifts
-  // -----------------------------
   providerNames.forEach((name) => {
-    const row: any[] = [];
-    row.push(name);   // A
-    row.push(0);      // B weekend_quota (editable)
-
-    for (let d = 1; d <= daysInMonth; d++) {
-      row.push("");   // C..(C+days-1)
-    }
-
-    row.push(0);      // last col (target_shifts), editable
+    const row = [name, 0];
+    for (let d = 1; d <= daysInMonth; d++) row.push("");
+    row.push(0);
     data.push(row);
   });
 
+  // Create sheet
   const ws = XLSX.utils.aoa_to_sheet(data);
+
+  // Color-code PP cells in Row 1
+  for (let col = 2; col < 2 + daysInMonth; col++) {
+    const cellRef = XLSX.utils.encode_cell({ r: 0, c: col });
+    const cell = ws[cellRef];
+    if (!cell) continue;
+
+    const ppText = String(cell.v); // "PP5"
+    const ppNum = Number(ppText.replace("PP", ""));
+    const color = ppColor(ppNum);
+
+    if (!ws["!cols"]) ws["!cols"] = [];
+
+    if (!cell.s) cell.s = {};
+    if (!cell.s.fill) cell.s.fill = {};
+
+    if (color === "blue") {
+      cell.s.fill = { fgColor: { rgb: "B7D4F8" } };
+    }
+    if (color === "yellow") {
+      cell.s.fill = { fgColor: { rgb: "FFF4A3" } };
+    }
+    if (color === "purple") {
+      cell.s.fill = { fgColor: { rgb: "D9B4F7" } };
+    }
+  }
+
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Schedule");
 
