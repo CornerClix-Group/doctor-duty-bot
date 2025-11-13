@@ -190,7 +190,7 @@ export const ScheduleUpload = ({ onScheduleLoad, selectedMonth: propMonth, selec
 
       const wb = generateScheduleTemplate(monthIndex, year, providerNames, startingPP, startingBlockIndex);
 
-      const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+      const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array', cellStyles: true });
 
       const monthName = new Date(year, monthIndex, 1).toLocaleString('default', {
         month: 'long',

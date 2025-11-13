@@ -104,7 +104,10 @@ export function generateScheduleTemplate(
     if (!ws[cellRef]) continue;
 
     ws[cellRef].s = {
-      fill: { fgColor: { rgb: ppColor } }
+      fill: {
+        patternType: "solid",
+        fgColor: { rgb: ppColor }
+      }
     };
   }
 
@@ -124,7 +127,10 @@ export function generateScheduleTemplate(
       if (!ws[cellRef]) ws[cellRef] = { t: "s", v: "" };
       if (!ws[cellRef].s) ws[cellRef].s = {};
 
-      ws[cellRef].s.fill = { fgColor: { rgb: bg } };
+      ws[cellRef].s.fill = {
+        patternType: "solid",
+        fgColor: { rgb: bg }
+      };
     }
   }
 
