@@ -34,6 +34,13 @@ const isValidEmail = (email: string): boolean => {
 
 const parseShiftArray = (value: string | undefined): string[] => {
   if (!value || value.trim() === "") return [];
+  
+  // Check for "all" keyword (case-insensitive)
+  const trimmedValue = value.trim().toLowerCase();
+  if (trimmedValue === "all") {
+    return AVAILABLE_SHIFTS;
+  }
+  
   return value
     .split("|")
     .map(s => s.trim())

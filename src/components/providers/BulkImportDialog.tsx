@@ -185,7 +185,7 @@ export const BulkImportDialog = ({ open, onOpenChange, onSuccess }: BulkImportDi
                       <span className="text-muted-foreground">({provider.email})</span>
                       {provider.allowed_shifts.length > 0 && (
                         <span className="text-muted-foreground">
-                          - Shifts: {provider.allowed_shifts.join(", ")}
+                          - Shifts: {provider.allowed_shifts.length === 11 ? "All Shifts" : provider.allowed_shifts.join(", ")}
                         </span>
                       )}
                     </div>
