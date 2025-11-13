@@ -1,117 +1,76 @@
-import * as XLSX from 'xlsx';
-import { ScheduleData } from './scheduleParser';
+import * as XLSX from "xlsx";
 
-interface ExportSchedule {
-  month: string;
-  schedule: Array<{
-    date: string;
-    pattern: number;
-    assignments: Array<{ shift: string; provider: string }>;
-  }>;
-  provider_totals: {
-    [provider: string]: {
-      worked: number;
-      weekends: number;
-      target: number;
-      weekendQuota: number;
-    };
-  };
-}
+/**
+ * Export a completed schedule into a true Excel grid.
+ *
+ * @param schedule    The final schedule JSON { providerName: { date: shift } }
+ * @param templateWb  The workbook created using generateScheduleTemplate()
+ * @param providers   Provider rows from parser (to preserve weekend_quota + target_shifts)
+ */
+export function exportFinalScheduleToExcel(
+  schedule: Record<string, Record<string, string>>,
+  templateWb: XLSX.WorkBook,
+  providers: Array<{ name: string }>
+): XLSX.WorkBook {
+  const ws = templateWb.Sheets["Schedule"];
+  if (!ws) throw new Error("Template 'Schedule' sheet missing.");
 
-const SHIFT_ORDER = ['D1', 'FT AM', 'D2', 'MIDA', 'FT PM', 'MIDB', 'E', 'N', 'FT W'];
+  // Determine providers row start — template rows:
+  // Row 1 = Month
+  // Row 2 = Pattern
+  // Row 3 = Day
+  // Row 4 = Date
+  const PROVIDER_START_ROW = 5; // 1-indexed in Excel, 0-indexed as r=4
 
-export function exportScheduleToExcel(
-  originalData: ScheduleData,
-  generatedSchedule: ExportSchedule
-) {
-  const wb = XLSX.utils.book_new();
-  const sheetData: any[][] = [];
-  
-  // Row 1: Month and Pay Period labels
-  const row1 = [originalData.month];
-  originalData.days.forEach(day => {
-    row1.push(`PP${day.payPeriod}`);
+  // Assemble date → column mapping from template Row 4
+  const range = XLSX.utils.decode_range(ws["!ref"]!);
+  const dateColumnMap: Record<string, number> = {};
+  const dateRowIndex = 3; // Row 4 (0-based index)
+
+  for (let col = 1; col <= range.e.c; col++) {
+    const cell = ws[XLSX.utils.encode_cell({ r: dateRowIndex, c: col })];
+    if (!cell?.v) continue;
+
+    const day = cell.v;
+    const monthCell = ws["A1"];
+    if (!monthCell?.v) continue;
+    
+    const parts = String(monthCell.v).split(" ");
+    const monthName = parts[0];
+    const year = parseInt(parts[1]);
+
+    const monthIndex = new Date(`${monthName} 1, ${year}`).getMonth();
+    const iso = new Date(year, monthIndex, day).toISOString().slice(0, 10);
+
+    dateColumnMap[iso] = col;
+  }
+
+  // Build provider name → row number map
+  const providerRowMap: Record<string, number> = {};
+
+  providers.forEach((prov, idx) => {
+    providerRowMap[prov.name] = PROVIDER_START_ROW + idx; 
+    // PROVIDER_START_ROW is already 1-indexed (row 5)
   });
-  row1.push('Target Total Shifts');
-  sheetData[0] = row1;
-  
-  // Row 2: Pattern numbers
-  const row2 = ['Pattern'];
-  originalData.days.forEach(day => row2.push(String(day.pattern)));
-  row2.push('');
-  sheetData[1] = row2;
-  
-  // Row 3: Day of week
-  const row3 = ['Day'];
-  originalData.days.forEach(day => row3.push(day.dayOfWeek));
-  row3.push('');
-  sheetData[2] = row3;
-  
-  // Row 4: Dates
-  const row4 = ['Date'];
-  originalData.days.forEach(day => {
-    const date = new Date(day.date + 'T00:00:00');
-    row4.push(String(date.getDate()));
-  });
-  row4.push('');
-  sheetData[3] = row4;
-  
-  // Build assignment map: date -> provider -> shift
-  const assignmentMap = new Map<string, Map<string, string>>();
-  generatedSchedule.schedule.forEach(daySchedule => {
-    const dayMap = new Map<string, string>();
-    daySchedule.assignments.forEach(assignment => {
-      dayMap.set(assignment.provider, assignment.shift);
+
+  // Now write schedule shifts into the Excel sheet
+  Object.keys(schedule).forEach((providerName) => {
+    const rowNum = providerRowMap[providerName];
+    if (!rowNum) return; // provider not in template
+
+    const assignments = schedule[providerName];
+
+    Object.entries(assignments).forEach(([date, shift]) => {
+      const col = dateColumnMap[date];
+      if (col === undefined) return; // out of template month range
+
+      const cellRef = XLSX.utils.encode_cell({ r: rowNum - 1, c: col });
+      ws[cellRef] = { t: "s", v: shift };
     });
-    assignmentMap.set(daySchedule.date, dayMap);
   });
-  
-  // Row 5+: Provider rows (ONE ROW PER PROVIDER)
-  const providerNames = Object.keys(originalData.providers);
-  providerNames.forEach(providerName => {
-    const provider = originalData.providers[providerName];
-    const row = [
-      providerName,
-      provider.weekendQuota
-    ];
-    
-    // Add daily assignments
-    originalData.days.forEach(day => {
-      // Check for locked cells first (highest priority)
-      if (provider.lockedCells && provider.lockedCells[day.date]) {
-        row.push(provider.lockedCells[day.date]);
-        return;
-      }
-      
-      // Check if provider was assigned a shift on this day
-      const dayMap = assignmentMap.get(day.date);
-      const assignedShift = dayMap?.get(providerName);
-      
-      if (assignedShift) {
-        row.push(assignedShift);
-      } else {
-        row.push('');
-      }
-    });
-    
-    // Add target total shifts
-    row.push(provider.targetShifts);
-    
-    sheetData.push(row);
-  });
-  
-  // Create worksheet
-  const ws = XLSX.utils.aoa_to_sheet(sheetData);
-  
-  // Set column widths
-  ws['!cols'] = [
-    { wch: 15 }, // Provider
-    { wch: 12 }, // Weekend Quota
-    ...Array(originalData.days.length).fill({ wch: 6 }), // Days
-    { wch: 15 }  // Target Total Shifts
-  ];
-  
-  XLSX.utils.book_append_sheet(wb, ws, 'Schedule');
-  const filename = `${originalData.month}_${originalData.year}_Generated.xlsx`;
-  XLSX.writeFile(wb, filename);
+
+  // Recompute sheet range
+  ws["!ref"] = XLSX.utils.encode_range(range);
+
+  return templateWb;
 }

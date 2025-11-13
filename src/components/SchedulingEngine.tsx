@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Loader2, Sparkles, CheckCircle2, AlertTriangle, Download } from 'lucide-react';
 import { useState } from 'react';
-import { exportScheduleToExcel } from '@/lib/scheduleExporter';
+import { exportFinalScheduleToExcel } from '@/lib/scheduleExporter';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 
@@ -170,7 +170,13 @@ export const SchedulingEngine = ({ scheduleData, onScheduleGenerated }: Scheduli
 
   const handleExport = () => {
     if (!generatedResult || !scheduleData) return;
-    exportScheduleToExcel(scheduleData, generatedResult);
+    
+    // TODO: Implement export with new signature
+    // exportFinalScheduleToExcel requires:
+    // 1. schedule: Record<string, Record<string, string>>
+    // 2. templateWb: XLSX.WorkBook
+    // 3. providers: Array<{ name: string }>
+    console.log('Export functionality needs to be updated for new exporter signature');
   };
 
   return (
