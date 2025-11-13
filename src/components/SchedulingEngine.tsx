@@ -14,6 +14,7 @@ import React, { useState, useEffect } from "react";
 import * as XLSX from "xlsx";
 import { generateScheduleTemplate } from "@/lib/scheduleTemplateGenerator";
 import { supabase } from "@/integrations/supabase/client";
+import { ValidationPanel } from "./ValidationPanel";
 
 export const SchedulingEngine = () => {
   const [providers, setProviders] = useState<any[]>([]);
@@ -223,17 +224,7 @@ export const SchedulingEngine = () => {
       {error && <p className="text-red-600 font-bold">{error}</p>}
 
       {/* RESULT / VALIDATION ERRORS / SCHEDULE */}
-      {result && (
-        <div className="bg-gray-100 p-4 rounded mt-4">
-          <h2 className="text-xl font-bold mb-2">
-            {result.valid === false ? "Validation Errors" : "Generated Schedule"}
-          </h2>
-
-          <pre className="text-sm">
-            {JSON.stringify(result, null, 2)}
-          </pre>
-        </div>
-      )}
+      <ValidationPanel result={result} />
     </div>
   );
 };
