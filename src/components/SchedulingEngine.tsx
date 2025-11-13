@@ -104,6 +104,9 @@ export const SchedulingEngine = () => {
         if (json.errors) {
           setError("Validation failed. Fix the input template.");
           setResult(json); // show validation errors
+          setTimeout(() => {
+            document.getElementById("validation-panel")?.scrollIntoView({ behavior: "smooth" });
+          }, 150);
         } else {
           setError(json.error || "Unknown error occurred.");
         }
@@ -113,6 +116,9 @@ export const SchedulingEngine = () => {
 
       // SUCCESS
       setResult(json);
+      setTimeout(() => {
+        document.getElementById("validation-panel")?.scrollIntoView({ behavior: "smooth" });
+      }, 150);
     } catch (err: any) {
       setError(err.message || "Upload failed.");
     }
@@ -224,7 +230,9 @@ export const SchedulingEngine = () => {
       {error && <p className="text-red-600 font-bold">{error}</p>}
 
       {/* RESULT / VALIDATION ERRORS / SCHEDULE */}
-      <ValidationPanel result={result} />
+      <div id="validation-panel">
+        <ValidationPanel result={result} />
+      </div>
     </div>
   );
 };
