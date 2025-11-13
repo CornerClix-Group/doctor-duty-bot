@@ -48,7 +48,11 @@ const Providers = () => {
         .order('last_name, first_name');
 
       if (error) throw error;
-      setProviders(data || []);
+      const providersData = (data as any[])?.map((p: any) => ({
+        ...p,
+        active: p.active ?? true
+      })) || [];
+      setProviders(providersData);
     } catch (error) {
       console.error('Error fetching providers:', error);
       toast({

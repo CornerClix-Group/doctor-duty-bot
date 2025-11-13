@@ -107,7 +107,7 @@ function autoCorrectTypos(value: string): string {
 // MAIN PARSER FUNCTION
 // ---------------------------------------------------------------------------
 
-export function parseSchedule(workbook: XLSX.WorkBook) {
+export function parseSchedule(workbook: XLSX.WorkBook, providerProfiles?: any[]) {
   console.log('parseSchedule called with workbook:', workbook);
   console.log('Available sheet names:', workbook.SheetNames);
   
