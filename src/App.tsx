@@ -14,7 +14,6 @@ import Broadcast from "./pages/Broadcast";
 import Chat from "./pages/Chat";
 import ProviderProfile from "./pages/ProviderProfile";
 import GenerateSchedule from "./pages/GenerateSchedule";
-import ProviderRulesManager from "./pages/ProviderRulesManager";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -36,7 +35,6 @@ const App = () => (
             <Route path="/profile" element={<ProtectedRoute><ProviderProfile /></ProtectedRoute>} />
             <Route path="/broadcast" element={<ProtectedRoute><Broadcast /></ProtectedRoute>} />
             <Route path="/generate" element={<ProtectedRoute><GenerateSchedule /></ProtectedRoute>} />
-            <Route path="/provider-rules" element={<ProtectedRoute><ProviderRulesManager /></ProtectedRoute>} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>

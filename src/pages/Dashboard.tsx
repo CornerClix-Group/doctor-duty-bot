@@ -83,14 +83,6 @@ const Dashboard = () => {
       roles: ['admin'],
     },
     {
-      title: 'Provider Rules Manager',
-      description: 'Configure scheduling rules for all providers',
-      icon: Settings,
-      action: () => navigate('/provider-rules'),
-      variant: 'outline' as const,
-      roles: ['admin'],
-    },
-    {
       title: 'Admin Dashboard',
       description: 'Access admin tools and manage system',
       icon: Settings,
