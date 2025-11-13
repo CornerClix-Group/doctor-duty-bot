@@ -1,7 +1,7 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Edit, Trash2, Mail as MailIcon, Phone, Calendar, CheckCircle, XCircle, Send } from 'lucide-react';
+import { Edit, Trash2, Mail as MailIcon, Send, User } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Provider } from '@/pages/Providers';
 import {
@@ -48,7 +48,7 @@ export const ProviderList = ({ providers, loading, onEdit, onDelete, onSendInvit
       <Card className="p-12">
         <div className="text-center space-y-3">
           <div className="mx-auto rounded-full bg-muted w-16 h-16 flex items-center justify-center">
-            <CheckCircle className="h-8 w-8 text-muted-foreground" />
+            <User className="h-8 w-8 text-muted-foreground" />
           </div>
           <h3 className="text-lg font-semibold text-foreground">No providers found</h3>
           <p className="text-sm text-muted-foreground">
@@ -67,19 +67,14 @@ export const ProviderList = ({ providers, loading, onEdit, onDelete, onSendInvit
             <div className="flex items-start justify-between">
               <div className="flex-1">
                 <CardTitle className="flex items-center gap-2">
-                  {provider.name}
-                  {provider.active ? (
-                    <CheckCircle className="h-4 w-4 text-success" />
-                  ) : (
-                    <XCircle className="h-4 w-4 text-muted-foreground" />
-                  )}
+                  {provider.first_name} {provider.last_name}
                 </CardTitle>
                 <CardDescription className="mt-1">
                   {provider.email || 'No email'}
                 </CardDescription>
               </div>
-              <Badge variant={provider.active ? "default" : "secondary"}>
-                {provider.active ? 'Active' : 'Inactive'}
+              <Badge variant="default">
+                {provider.role || 'Provider'}
               </Badge>
             </div>
           </CardHeader>
@@ -92,62 +87,80 @@ export const ProviderList = ({ providers, loading, onEdit, onDelete, onSendInvit
                   <span className="truncate">{provider.email}</span>
                 </div>
               )}
-              {provider.phone && (
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <Phone className="h-4 w-4" />
-                  <span>{provider.phone}</span>
-                </div>
-              )}
             </div>
 
-            {/* Stats */}
+            {/* Constraints */}
             <div className="grid grid-cols-2 gap-4 pt-4 border-t">
               <div>
-                <p className="text-xs text-muted-foreground">Target Shifts</p>
-                <p className="text-2xl font-bold text-foreground">{provider.target_shifts}</p>
+                <p className="text-xs text-muted-foreground">Rest Hours</p>
+                <p className="text-2xl font-bold text-foreground">{provider.rest_hours || 12}h</p>
               </div>
               <div>
-                <p className="text-xs text-muted-foreground">Weekend Quota</p>
-                <p className="text-2xl font-bold text-foreground">{provider.weekend_quota}</p>
+                <p className="text-xs text-muted-foreground">Recovery Days</p>
+                <p className="text-2xl font-bold text-foreground">{provider.n_recovery_days || 2}</p>
               </div>
             </div>
 
+            {/* Shift Preferences */}
+            {provider.allowed_shifts && provider.allowed_shifts.length > 0 && (
+              <div className="pt-2 border-t">
+                <p className="text-xs text-muted-foreground mb-2">Allowed Shifts</p>
+                <div className="flex flex-wrap gap-1">
+                  {provider.allowed_shifts.slice(0, 5).map((shift) => (
+                    <Badge key={shift} variant="secondary" className="text-xs">
+                      {shift}
+                    </Badge>
+                  ))}
+                  {provider.allowed_shifts.length > 5 && (
+                    <Badge variant="outline" className="text-xs">
+                      +{provider.allowed_shifts.length - 5} more
+                    </Badge>
+                  )}
+                </div>
+              </div>
+            )}
+
             {/* Actions */}
-            <div className="flex gap-2 pt-4">
+            <div className="flex gap-2 pt-4 border-t">
               <Button
                 variant="outline"
                 size="sm"
                 className="flex-1"
-                onClick={() => onSendInvite(provider)}
-                disabled={!provider.email}
-                title={provider.email ? "Send invitation email" : "No email address"}
-              >
-                <Send className="mr-2 h-4 w-4" />
-                Invite
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
                 onClick={() => onEdit(provider)}
               >
-                <Edit className="h-4 w-4" />
+                <Edit className="h-4 w-4 mr-1" />
+                Edit
               </Button>
+
+              {provider.email && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => onSendInvite(provider)}
+                >
+                  <Send className="h-4 w-4" />
+                </Button>
+              )}
+
               <AlertDialog>
                 <AlertDialogTrigger asChild>
-                  <Button variant="outline" size="sm" className="text-destructive hover:text-destructive">
-                    <Trash2 className="h-4 w-4" />
+                  <Button variant="outline" size="sm">
+                    <Trash2 className="h-4 w-4 text-destructive" />
                   </Button>
                 </AlertDialogTrigger>
                 <AlertDialogContent>
                   <AlertDialogHeader>
                     <AlertDialogTitle>Delete Provider</AlertDialogTitle>
                     <AlertDialogDescription>
-                      Are you sure you want to delete {provider.name}? This action cannot be undone and will remove all associated constraints and blocked days.
+                      Are you sure you want to delete {provider.first_name} {provider.last_name}? This action cannot be undone.
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>
                     <AlertDialogCancel>Cancel</AlertDialogCancel>
-                    <AlertDialogAction onClick={() => onDelete(provider.id)}>
+                    <AlertDialogAction
+                      onClick={() => onDelete(provider.id)}
+                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                    >
                       Delete
                     </AlertDialogAction>
                   </AlertDialogFooter>
