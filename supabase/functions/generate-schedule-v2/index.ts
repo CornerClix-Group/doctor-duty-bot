@@ -162,22 +162,31 @@ function parseScheduleFromExcel(workbook: XLSX.WorkBook) {
 
 function mergeRules(profiles: any[], constraints: any[]) {
   return profiles.map(profile => {
-    const c = constraints.find(x => x.provider_id === profile.id);
+    const constraint = constraints.find(c => c.provider_id === profile.id);
 
     return {
       name: `${profile.first_name} ${profile.last_name}`.trim(),
-      allowed_shifts: c?.allowed_shifts ?? profile.allowed_shifts ?? [],
-      preferred_shifts: c?.preferred_shifts ?? profile.preferred_shifts ?? [],
-      rest_hours: c?.rest_hours ?? profile.rest_hours ?? 12,
-      n_recovery_days: c?.n_recovery_days ?? profile.n_recovery_days ?? 2,
+      
+      // Prioritize constraint arrays if they have values, otherwise use profile arrays
+      allowed_shifts: constraint?.allowed_shifts?.length
+        ? constraint.allowed_shifts
+        : (profile.allowed_shifts || []),
+
+      preferred_shifts: constraint?.preferred_shifts?.length
+        ? constraint.preferred_shifts
+        : (profile.preferred_shifts || []),
+
+      rest_hours: constraint?.rest_hours ?? profile.rest_hours ?? 12,
+      n_recovery_days: constraint?.n_recovery_days ?? profile.n_recovery_days ?? 2,
+
       rules: {
-        disallowed_shifts: c?.disallowed_shifts ?? [],
-        saturday_restrictions: c?.saturday_restrictions ?? profile.saturday_restrictions ?? null,
-        sunday_restrictions: c?.sunday_restrictions ?? profile.sunday_restrictions ?? null,
-        max_consecutive_n: c?.max_consecutive_n ?? null,
-        block_pattern: c?.block_pattern ?? profile.block_pattern ?? null,
-        weekend_rules: c?.weekend_rules ?? []
-      }
+        disallowed_shifts: constraint?.disallowed_shifts ?? [],
+        saturday_restrictions: constraint?.saturday_restrictions ?? profile.saturday_restrictions ?? "all",
+        sunday_restrictions: constraint?.sunday_restrictions ?? profile.sunday_restrictions ?? "all",
+        weekend_rules: constraint?.weekend_rules ?? [],
+        block_pattern: constraint?.block_pattern ?? profile.block_pattern ?? null,
+        max_consecutive_n: constraint?.max_consecutive_n ?? null,
+      },
     };
   });
 }
