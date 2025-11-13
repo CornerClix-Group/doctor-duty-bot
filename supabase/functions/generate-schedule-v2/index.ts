@@ -97,6 +97,7 @@ serve(async (req) => {
       const c = constraints.find((cc) => cc.provider_id === p.id);
 
       return {
+        name: `${p.first_name} ${p.last_name}`.trim(),
         first_name: p.first_name,
         last_name: p.last_name,
         email: p.email,
