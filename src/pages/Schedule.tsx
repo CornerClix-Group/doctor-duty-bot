@@ -176,10 +176,7 @@ const Schedule = () => {
           {/* Processing Section */}
           {scheduleData && validationConfirmed && !generatedSchedule && (
             <div className="max-w-3xl mx-auto">
-              <SchedulingEngine 
-                scheduleData={scheduleData}
-                onScheduleGenerated={setGeneratedSchedule}
-              />
+              <SchedulingEngine />
             </div>
           )}
 
