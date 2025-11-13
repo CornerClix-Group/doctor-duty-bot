@@ -5,18 +5,19 @@
 import React from "react";
 
 interface Props {
-  result: any; // result returned from the edge function
+  errors?: any[];
+  warnings?: any[];
 }
 
-export const ValidationPanel = ({ result }: Props) => {
-  if (!result) return null;
+export const ValidationPanel = ({ errors = [], warnings = [] }: Props) => {
+  if (errors.length === 0 && warnings.length === 0) return null;
 
-  const { valid, errors, warnings } = result;
+  const hasErrors = errors.length > 0;
 
   return (
     <div className="mt-6">
       {/* VALIDATION FAILED */}
-      {valid === false && (
+      {hasErrors && (
         <div className="border border-red-400 bg-red-50 p-4 rounded shadow">
           <h2 className="text-xl font-bold text-red-700 mb-3">
             ❌ Validation Failed — Cannot Generate Schedule
@@ -37,7 +38,7 @@ export const ValidationPanel = ({ result }: Props) => {
           </div>
 
           {/* WARNINGS (non-blocking) */}
-          {warnings && warnings.length > 0 && (
+          {warnings.length > 0 && (
             <div className="mt-6">
               <h3 className="text-lg font-semibold text-yellow-700 mb-2">
                 ⚠️ Warnings (not blocking)
@@ -76,15 +77,17 @@ export const ValidationPanel = ({ result }: Props) => {
         </div>
       )}
 
-      {/* VALID RESULT (Schedule Generated) */}
-      {valid && (
-        <div className="border border-green-400 bg-green-50 p-4 rounded shadow">
-          <h2 className="text-xl font-bold text-green-700 mb-3">
-            ✅ Schedule Generated Successfully
+      {/* WARNINGS ONLY (no errors) */}
+      {!hasErrors && warnings.length > 0 && (
+        <div className="border border-yellow-400 bg-yellow-50 p-4 rounded shadow">
+          <h2 className="text-xl font-bold text-yellow-700 mb-3">
+            ⚠️ Validation Warnings
           </h2>
-          <p className="text-green-800">
-            Your schedule was created and saved without errors.
-          </p>
+          <ul className="list-disc ml-6 text-yellow-800 space-y-1">
+            {warnings.map((w: string, idx: number) => (
+              <li key={idx}>{w}</li>
+            ))}
+          </ul>
         </div>
       )}
     </div>
