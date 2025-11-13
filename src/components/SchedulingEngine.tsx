@@ -3,7 +3,9 @@ import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Loader2, Sparkles, CheckCircle2, AlertTriangle, Download } from 'lucide-react';
 import { useState } from 'react';
+import * as XLSX from 'xlsx';
 import { exportFinalScheduleToExcel } from '@/lib/scheduleExporter';
+import { generateScheduleTemplate } from '@/lib/scheduleTemplateGenerator';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 
@@ -171,12 +173,56 @@ export const SchedulingEngine = ({ scheduleData, onScheduleGenerated }: Scheduli
   const handleExport = () => {
     if (!generatedResult || !scheduleData) return;
     
-    // TODO: Implement export with new signature
-    // exportFinalScheduleToExcel requires:
-    // 1. schedule: Record<string, Record<string, string>>
-    // 2. templateWb: XLSX.WorkBook
-    // 3. providers: Array<{ name: string }>
-    console.log('Export functionality needs to be updated for new exporter signature');
+    try {
+      // Extract month and year from scheduleData
+      const monthName = scheduleData.month || 'January';
+      const year = scheduleData.year || new Date().getFullYear();
+      
+      // Parse month name to index (0-11)
+      const monthIndex = new Date(`${monthName} 1, ${year}`).getMonth();
+      
+      // Extract provider names from scheduleData
+      const providers = scheduleData.providers || [];
+      const providerNames = providers.map((p: any) => p.name);
+      
+      // Generate template workbook
+      const templateWb = generateScheduleTemplate(monthIndex, year, providerNames);
+      
+      // Export schedule data into the template
+      const filledWb = exportFinalScheduleToExcel(
+        generatedResult.schedule,
+        templateWb,
+        providers
+      );
+      
+      // Convert to array buffer and download
+      const wbout = XLSX.write(filledWb, { bookType: 'xlsx', type: 'array' });
+      const blob = new Blob([wbout], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      });
+      
+      const filename = `Schedule_${monthName}_${year}_Generated.xlsx`;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      
+      toast({
+        title: "Export Successful",
+        description: `Schedule exported as ${filename}`,
+      });
+    } catch (err) {
+      console.error('Export failed:', err);
+      toast({
+        title: "Export Failed",
+        description: "Failed to export schedule. Please try again.",
+        variant: "destructive"
+      });
+    }
   };
 
   return (
