@@ -159,23 +159,23 @@ export const ScheduleUpload = ({ onScheduleLoad, selectedMonth: propMonth, selec
       let startingBlockIndex = 0;
 
       if (uploadedWorkbook) {
+        // Continuation from previous schedule
         const lastPP = extractLastPPFromExcel(uploadedWorkbook);
+        const lastBlockIndex = extractLastPPBlockIndex(uploadedWorkbook);
+
         if (lastPP !== null) {
           startingPP = lastPP === 14 ? 1 : lastPP + 1;
+        } else {
+          // default if unreadable
+          startingPP = 1;
         }
-        
-        // Extract block color to continue pattern
-        startingBlockIndex = extractLastPPBlockIndex(uploadedWorkbook);
-        
-        // If PP wrapped from 14 to 1, advance block index
-        if (lastPP === 14) {
-          startingBlockIndex = (startingBlockIndex + 1) % 3;
-        }
+
+        startingBlockIndex = (lastBlockIndex + (lastPP === 14 ? 1 : 0)) % 3;
       } else {
-        // SPECIAL CASE: January 2026 must start at PP5
-        if (selectedMonth === 1 && selectedYear === 2026) {
+        // Special case: January 2026 MUST start with PP5
+        if (year === 2026 && selectedMonth === 1) {
           startingPP = 5;
-          startingBlockIndex = 1; // Blue block for Jan 2026
+          startingBlockIndex = 0; // Yellow (matches example)
         }
       }
 
