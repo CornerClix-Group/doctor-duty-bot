@@ -3,13 +3,25 @@ import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Loader2, Sparkles, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { useState } from 'react';
-import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 
 interface SchedulingEngineProps {
   scheduleData: any;
   onScheduleGenerated: (result: any) => void;
 }
+
+const fileToBase64 = (file: File): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      const base64 = result.split(',')[1];
+      resolve(base64);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+};
 
 export const SchedulingEngine = ({ scheduleData, onScheduleGenerated }: SchedulingEngineProps) => {
   const [isProcessing, setIsProcessing] = useState(false);
@@ -39,31 +51,33 @@ export const SchedulingEngine = ({ scheduleData, onScheduleGenerated }: Scheduli
       const file = fileInput.files[0];
       
       // Convert to base64
-      const base64File = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => {
-          const result = reader.result as string;
-          const base64 = result.split(',')[1];
-          resolve(base64);
-        };
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-      });
+      const base64File = await fileToBase64(file);
 
       console.log('Calling generate-schedule-v2 with base64 Excel file');
 
-      // Call the edge function with base64 Excel file
-      const { data, error } = await supabase.functions.invoke('generate-schedule-v2', {
-        body: {
-          file: base64File
-        }
-      });
+      // Get the auth token the way Lovable sets it
+      const token = localStorage.getItem("sb-auth-token")
+        ? JSON.parse(localStorage.getItem("sb-auth-token")!).access_token
+        : null;
 
-      if (error) {
-        throw error;
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-schedule-v2`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {})
+          },
+          body: JSON.stringify({ file: base64File })
+        }
+      );
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to generate schedule');
       }
 
-      const result = data;
       console.log('Schedule generation result:', result);
 
       if (result.warnings && result.warnings.length > 0) {
