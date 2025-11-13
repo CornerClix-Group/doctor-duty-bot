@@ -2,30 +2,27 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { CheckCircle2, AlertTriangle, Calendar, Users, ArrowRight, FileCheck } from 'lucide-react';
-import { ScheduleData } from '@/lib/scheduleParser';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 interface ScheduleValidationProps {
-  scheduleData: ScheduleData;
+  scheduleData: any; // New parser structure: { month, year, coverage_pattern, providers }
   onConfirm: () => void;
   onCancel: () => void;
 }
 
 export const ScheduleValidation = ({ scheduleData, onConfirm, onCancel }: ScheduleValidationProps) => {
-  const totalBlankShifts = scheduleData.days.reduce((total, day) => {
-    const pattern = day.pattern === 8 ? 8 : 7;
-    const filledShifts = Object.values(day.shifts).filter(v => v && !['X', 'L', 'HL', ''].includes(v)).length;
-    return total + (pattern - filledShifts);
-  }, 0);
-
-  const totalFilledShifts = scheduleData.days.reduce((total, day) => {
-    return total + Object.values(day.shifts).filter(v => v && !['X', 'L', 'HL', ''].includes(v)).length;
+  // New parser structure: { month, year, coverage_pattern, providers }
+  const providerList = scheduleData.providers || [];
+  const totalDays = Object.keys(scheduleData.coverage_pattern || {}).length;
+  
+  // Count locked shifts and providers
+  const totalLockedShifts = providerList.reduce((sum: number, provider: any) => {
+    return sum + (provider.days || []).filter((d: any) => d.locked).length;
   }, 0);
   
-  const totalBlockedDays = Object.values(scheduleData.providerBlocked || {}).reduce((sum, blockedSet) => sum + blockedSet.size, 0);
-
-  const providerList = Object.values(scheduleData.providers);
-  const hasIssues = providerList.length === 0 || scheduleData.days.length === 0;
+  const totalBlankShifts = totalDays * 7 - totalLockedShifts; // Rough estimate
+  
+  const hasIssues = providerList.length === 0 || totalDays === 0;
 
   return (
     <div className="space-y-6">
@@ -47,7 +44,7 @@ export const ScheduleValidation = ({ scheduleData, onConfirm, onCancel }: Schedu
               <AlertTitle>Validation Issues Detected</AlertTitle>
               <AlertDescription>
                 {providerList.length === 0 && <p>No providers detected in the Excel file.</p>}
-                {scheduleData.days.length === 0 && <p>No schedule days detected.</p>}
+                {totalDays === 0 && <p>No schedule days detected.</p>}
               </AlertDescription>
             </Alert>
           )}
@@ -66,7 +63,7 @@ export const ScheduleValidation = ({ scheduleData, onConfirm, onCancel }: Schedu
                 <Calendar className="h-4 w-4 text-primary" />
                 <p className="text-xs text-muted-foreground">Total Days</p>
               </div>
-              <p className="text-xl font-bold text-foreground">{scheduleData.days.length}</p>
+              <p className="text-xl font-bold text-foreground">{totalDays}</p>
             </Card>
 
             <Card className="p-4 bg-muted/30">
@@ -124,52 +121,34 @@ export const ScheduleValidation = ({ scheduleData, onConfirm, onCancel }: Schedu
 
           {/* Schedule Preview */}
           <div>
-            <h3 className="text-lg font-semibold text-foreground mb-3 flex items-center gap-2">
+            <h3 className="text-base font-semibold text-foreground mb-3 flex items-center gap-2">
               <Calendar className="h-5 w-5 text-primary" />
-              Schedule Preview (First 7 Days)
+              Schedule Preview
             </h3>
             <div className="space-y-2">
-              {scheduleData.days.slice(0, 7).map((day, idx) => {
-                const filledCount = Object.values(day.shifts).filter(v => v && !['X', 'L', 'HL', ''].includes(v)).length;
-                const totalShifts = day.pattern === 8 ? 8 : 7;
-                const blankCount = totalShifts - filledCount;
-
+              {scheduleData.providers.slice(0, 5).map((provider: any, idx: number) => {
+                const lockedCount = (provider.days || []).filter((d: any) => d.locked).length;
                 return (
                   <Card key={idx} className="p-3 bg-card/50">
                     <div className="flex items-center justify-between">
                       <div>
-                        <p className="font-medium text-foreground">
-                          {new Date(day.date + 'T00:00:00').toLocaleDateString('en-US', { 
-                            weekday: 'short',
-                            month: 'short',
-                            day: 'numeric'
-                          })}
+                        <p className="font-medium text-foreground">{provider.name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          Target: {provider.target_shifts} shifts | Weekend: {provider.weekend_quota}
                         </p>
-                        <p className="text-xs text-muted-foreground">Pattern {day.pattern}</p>
                       </div>
                       <div className="flex gap-2 items-center">
                         <Badge variant="outline" className="text-xs">
-                          <CheckCircle2 className="h-3 w-3 mr-1 text-success" />
-                          {filledCount} filled
+                          {lockedCount} locked
                         </Badge>
-                        {blankCount > 0 && (
-                          <Badge variant="secondary" className="text-xs">
-                            {blankCount} blank
-                          </Badge>
-                        )}
-                        {day.isWeekend && (
-                          <Badge variant="default" className="text-xs">
-                            Weekend
-                          </Badge>
-                        )}
                       </div>
                     </div>
                   </Card>
                 );
               })}
-              {scheduleData.days.length > 7 && (
+              {scheduleData.providers.length > 5 && (
                 <p className="text-xs text-muted-foreground text-center pt-2">
-                  + {scheduleData.days.length - 7} more days
+                  + {scheduleData.providers.length - 5} more providers
                 </p>
               )}
             </div>
@@ -182,10 +161,9 @@ export const ScheduleValidation = ({ scheduleData, onConfirm, onCancel }: Schedu
               <div className="flex-1">
                 <p className="font-semibold text-foreground">Validation Summary</p>
                 <ul className="text-sm text-muted-foreground space-y-1 mt-2">
-                  <li>✓ {totalFilledShifts} shifts already assigned</li>
-                  <li>✓ {totalBlockedDays} provider days blocked (X, L, etc.)</li>
-                  <li>✓ {totalBlankShifts} shifts need to be filled</li>
-                  <li>✓ {providerList.length} providers with constraints loaded</li>
+                  <li>✓ {totalLockedShifts} shifts already assigned/locked</li>
+                  <li>✓ {totalBlankShifts} shifts need to be filled (approximate)</li>
+                  <li>✓ {providerList.length} providers loaded</li>
                   <li>✓ Ready to generate complete schedule</li>
                 </ul>
               </div>

@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import * as XLSX from 'xlsx';
-import { parseScheduleData } from '@/lib/scheduleParser';
+import { parseSchedule } from '@/lib/scheduleParser';
 import { generateScheduleTemplate } from '@/lib/scheduleTemplateGenerator';
 import { extractLastPPFromExcel, extractLastPPBlockIndex } from '@/lib/extractPPFromExcel';
 import { generateScheduleTemplateBuffer } from '@/lib/scheduleTemplateGeneratorExcel';
@@ -109,21 +109,20 @@ export const ScheduleUpload = ({ onScheduleLoad, selectedMonth: propMonth, selec
     reader.onload = (evt) => {
       try {
         const bstr = evt.target?.result as ArrayBuffer;
-        const wb = XLSX.read(bstr, { type: 'array' });
-        const ws = wb.Sheets[wb.SheetNames[0]];
+        const workbook = XLSX.read(bstr, { type: 'array', cellStyles: true });
         
         // Store workbook for PP extraction
-        setUploadedWorkbook(wb);
+        setUploadedWorkbook(workbook);
         
-        // Parse the schedule data
-        const parsedData = parseScheduleData(ws);
+        // Parse the schedule data using new parser
+        const scheduleData = parseSchedule(workbook);
         
         // Convert to base64 for edge function
         const base64 = btoa(
           new Uint8Array(bstr).reduce((data, byte) => data + String.fromCharCode(byte), '')
         );
         
-        onScheduleLoad(parsedData, base64);
+        onScheduleLoad(scheduleData, base64);
         setUploadedFileName(file.name);
       } catch (err) {
         setError('Failed to parse Excel file. Please check the format.');
