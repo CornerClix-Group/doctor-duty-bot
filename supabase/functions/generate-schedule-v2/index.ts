@@ -23,19 +23,27 @@ const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 
 // ---------------------------------------------------------------------------
+// CORS HEADERS
+// ---------------------------------------------------------------------------
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+};
+
+// ---------------------------------------------------------------------------
 // RESPONSE HELPERS
 // ---------------------------------------------------------------------------
 function errorResponse(status: number, message: string, details?: any) {
   return new Response(JSON.stringify({ error: message, details }), {
     status,
-    headers: { "Content-Type": "application/json" }
+    headers: { ...corsHeaders, "Content-Type": "application/json" }
   });
 }
 
 function successResponse(data: any) {
   return new Response(JSON.stringify(data), {
     status: 200,
-    headers: { "Content-Type": "application/json" }
+    headers: { ...corsHeaders, "Content-Type": "application/json" }
   });
 }
 
@@ -43,6 +51,11 @@ function successResponse(data: any) {
 // SERVER ENTRY
 // ---------------------------------------------------------------------------
 serve(async (req) => {
+  // Handle CORS preflight requests
+  if (req.method === 'OPTIONS') {
+    return new Response(null, { headers: corsHeaders });
+  }
+
   try {
     // -----------------------------------------------------------------------
     // AUTH
