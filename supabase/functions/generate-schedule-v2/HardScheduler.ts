@@ -20,7 +20,7 @@ export class HardScheduler {
   coveragePattern: Record<string, number> = {}; // e.g., { "2026-01-01": 7 }
 
   schedule: Record<string, Record<string, string | null>> = {}; 
-  providerTotals: Record<string, number> = {};
+  providerTotals: Record<string, { worked: number; weekends: number; target: number; weekend_quota: number }> = {};
   payPeriodTotals: Record<number, number> = {};
   warnings: string[] = [];
 
@@ -250,19 +250,39 @@ export class HardScheduler {
       Object.keys(this.schedule[date]).forEach(name => scheduleProviderNames.add(name));
     });
 
+    // Initialize provider totals with full structure
     scheduleProviderNames.forEach(name => {
-      this.providerTotals[name] = 0;
+      // Find the provider in providerDays to get target and quota
+      const providerData = this.providerDays.find((p: any) => 
+        p.name.trim().toLowerCase() === name.trim().toLowerCase()
+      );
+      
+      this.providerTotals[name] = {
+        worked: 0,
+        weekends: 0,
+        target: providerData?.target_shifts || 0,
+        weekend_quota: providerData?.weekend_quota || 0
+      };
     });
 
     let ppCounter = 1;
     for (let date of dates) {
       this.payPeriodTotals[ppCounter] = this.payPeriodTotals[ppCounter] || 0;
+      
+      // Check if date is a weekend (0=Sunday, 6=Saturday)
+      const dayOfWeek = new Date(date).getDay();
+      const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
 
       for (let providerName in this.schedule[date]) {
         const shift = this.schedule[date][providerName];
         if (shift && shift !== "OFF") {
-          this.providerTotals[providerName] += 1;
+          this.providerTotals[providerName].worked += 1;
           this.payPeriodTotals[ppCounter] += 1;
+          
+          // Count weekend shifts
+          if (isWeekend) {
+            this.providerTotals[providerName].weekends += 1;
+          }
         }
       }
 
