@@ -83,6 +83,9 @@ export const ScheduleUpload = ({ onScheduleLoad }: ScheduleUploadProps) => {
 
   const handleDownloadTemplate = async () => {
     try {
+      // Get next month and year
+      const { monthIndex, year } = getNextMonthAndYear();
+
       // Fetch provider names from database
       const { data: providers } = await supabase
         .from('providers')
@@ -97,26 +100,23 @@ export const ScheduleUpload = ({ onScheduleLoad }: ScheduleUploadProps) => {
         return;
       }
 
-      // Get next month and year
-      const { monthIndex, year } = getNextMonthAndYear();
-
       // Generate workbook
       const wb = generateScheduleTemplate(monthIndex, year, providerNames);
-      
+
       // Convert to array buffer
       const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
-      
-      // Create Blob
+
+      // Generate filename
+      const monthName = new Date(year, monthIndex, 1)
+        .toLocaleString('default', { month: 'long' });
+
+      const filename = `ScheduleTemplate-${monthName}-${year}.xlsx`;
+
+      // Create and download blob
       const blob = new Blob([wbout], {
         type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       });
-      
-      // Trigger browser download
-      const monthName = new Date(year, monthIndex, 1).toLocaleString('default', {
-        month: 'long',
-      });
-      const filename = `ScheduleTemplate-${monthName}-${year}.xlsx`;
-      
+
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
