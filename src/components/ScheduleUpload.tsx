@@ -33,6 +33,7 @@ export const ScheduleUpload = ({ onScheduleLoad, selectedMonth: propMonth, selec
   const [error, setError] = useState<string | null>(null);
   const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
   const [providers, setProviders] = useState<any[]>([]);
+  const [loadingProviders, setLoadingProviders] = useState(true);
   
   // Use props if provided, otherwise default to next month
   const { month: nextMonth, year: nextYear } = getNextMonthAndYear();
@@ -41,18 +42,52 @@ export const ScheduleUpload = ({ onScheduleLoad, selectedMonth: propMonth, selec
 
   useEffect(() => {
     async function loadProviders() {
-      const { data, error } = await supabase
-        .from("provider_profiles")
-        .select("id, first_name, last_name")
-        .order('last_name');
+      setLoadingProviders(true);
+      try {
+        // Try provider_profiles first
+        const { data: profiles, error: profilesError } = await supabase
+          .from("provider_profiles")
+          .select("id, first_name, last_name")
+          .order('last_name');
 
-      if (error) {
-        console.error("Error loading providers:", error);
-        setError("Failed to load providers. Please refresh the page.");
-        return;
+        if (profilesError) {
+          console.error("Error loading provider_profiles:", profilesError);
+        }
+
+        let list: any[] = profiles || [];
+
+        // Fallback to providers table if profiles are empty
+        if (!list.length) {
+          const { data: providersTable, error: providersError } = await supabase
+            .from('providers')
+            .select('id, name, active')
+            .eq('active', true)
+            .order('name');
+
+          if (providersError) {
+            console.error('Error loading providers:', providersError);
+          }
+
+          if (providersTable && providersTable.length) {
+            list = providersTable.map((p: any) => {
+              const [first, ...rest] = (p.name || '').split(' ');
+              return { id: p.id, first_name: first || '', last_name: rest.join(' ') };
+            });
+          }
+        }
+
+        setProviders(list);
+        if (!list.length) {
+          setError('No providers found. Please add providers first.');
+        } else {
+          setError(null);
+        }
+      } catch (e) {
+        console.error('Unexpected error loading providers:', e);
+        setError('Failed to load providers. Please refresh the page.');
+      } finally {
+        setLoadingProviders(false);
       }
-
-      setProviders(data || []);
     }
 
     loadProviders();
@@ -114,8 +149,9 @@ export const ScheduleUpload = ({ onScheduleLoad, selectedMonth: propMonth, selec
       const monthIndex = selectedMonth - 1; // Convert 1-12 to 0-11
       const year = selectedYear;
 
-      const providerNames =
-        providers?.map((p) => `${p.first_name} ${p.last_name}`.trim()) ?? [];
+      const providerNames = providers.map((p) =>
+        (p as any).name ? (p as any).name : `${p.first_name} ${p.last_name}`.trim()
+      );
 
       if (!providerNames.length) {
         setError('No providers found. Please add providers first.');
@@ -167,9 +203,9 @@ export const ScheduleUpload = ({ onScheduleLoad, selectedMonth: propMonth, selec
           <div className="text-sm font-medium text-muted-foreground">
             Template for: {months[selectedMonth - 1]} {selectedYear}
           </div>
-          <Button onClick={handleDownloadTemplate} variant="default">
-            Download Template
-          </Button>
+        <Button onClick={handleDownloadTemplate} variant="default" disabled={loadingProviders || providers.length === 0}>
+          Download Template
+        </Button>
         </div>
       )}
 
