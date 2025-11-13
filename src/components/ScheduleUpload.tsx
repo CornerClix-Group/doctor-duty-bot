@@ -78,7 +78,12 @@ export const ScheduleUpload = ({ onScheduleLoad }: ScheduleUploadProps) => {
 
       const providerNames = providers?.map(p => 
         `${p.first_name} ${p.last_name}`.trim()
-      ) || ['Provider 1', 'Provider 2', 'Provider 3'];
+      ) ?? [];
+
+      if (!providerNames.length) {
+        setError('No providers found. Please add providers first.');
+        return;
+      }
 
       // Generate template for next month
       const today = new Date();
@@ -86,12 +91,31 @@ export const ScheduleUpload = ({ onScheduleLoad }: ScheduleUploadProps) => {
       const monthIndex = nextMonth.getMonth();
       const year = nextMonth.getFullYear();
 
+      // Generate workbook
       const wb = generateScheduleTemplate(monthIndex, year, providerNames);
       
-      const monthName = nextMonth.toLocaleString('default', { month: 'long' });
-      const filename = `ShiftPro_Schedule_${monthName}_${year}.xlsx`;
+      // Convert to array buffer
+      const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
       
-      XLSX.writeFile(wb, filename);
+      // Create Blob
+      const blob = new Blob([wbout], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      });
+      
+      // Trigger browser download
+      const monthName = new Date(year, monthIndex, 1).toLocaleString('default', {
+        month: 'long',
+      });
+      const filename = `ScheduleTemplate-${monthName}-${year}.xlsx`;
+      
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
     } catch (err) {
       console.error('Failed to generate template:', err);
       setError('Failed to generate template. Please try again.');
