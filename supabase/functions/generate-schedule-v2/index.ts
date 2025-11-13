@@ -116,12 +116,22 @@ function parseScheduleFromExcel(workbook: XLSX.WorkBook) {
     dates.forEach((dateStr, idx) => {
       const col = idx + 2;
       const cell = sheet[XLSX.utils.encode_cell({ r: row, c: col })];
-      const value = cell?.v?.toString().trim() || '';
+      
+      // Extract value - handle cells with styles but no actual value
+      let value = "";
+      if (cell && cell.v !== undefined && cell.v !== null) {
+        value = String(cell.v).trim();
+      }
+      // Treat pure-style cells (e.g., weekend shading) as blank
+      if (cell && cell.v === undefined) {
+        value = "";
+      }
 
-      // Locked if it contains actual shift codes or block codes
-      const isShiftCode = ['D1', 'D2', 'MIDA', 'MIDB', 'E', 'N', 'FT AM', 'FT PM', 'FT W', 'FT W12', 'C', 'A10'].includes(value);
-      const isBlockCode = ['X', 'L', 'HL'].includes(value);
-      const locked = isShiftCode || isBlockCode;
+      // Define shift names for lock detection
+      const SHIFT_NAMES = ['D1', 'D2', 'MIDA', 'MIDB', 'E', 'N', 'FT AM', 'FT PM', 'FT W', 'FT W12', 'C', 'A10'];
+      
+      // Locked only if it contains actual shift codes or block codes
+      const locked = value === 'X' || value === 'L' || value === 'HL' || SHIFT_NAMES.includes(value);
 
       days.push({
         date: dateStr,
