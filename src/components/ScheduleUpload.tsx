@@ -72,13 +72,12 @@ export const ScheduleUpload = ({ onScheduleLoad }: ScheduleUploadProps) => {
     try {
       // Fetch provider names from database
       const { data: providers } = await supabase
-        .from('provider_profiles')
-        .select('first_name, last_name')
-        .order('last_name');
+        .from('providers')
+        .select('name')
+        .eq('active', true)
+        .order('name');
 
-      const providerNames = providers?.map(p => 
-        `${p.first_name} ${p.last_name}`.trim()
-      ) ?? [];
+      const providerNames = providers?.map(p => p.name) ?? [];
 
       if (!providerNames.length) {
         setError('No providers found. Please add providers first.');
