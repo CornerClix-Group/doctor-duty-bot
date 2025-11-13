@@ -83,10 +83,17 @@ function safeCellValue(cell: any): string {
 // ---------------------------------------------------------------------------
 
 export function parseSchedule(workbook: XLSX.WorkBook) {
-  const sheet = workbook.Sheets["Schedule"];
-  if (!sheet) throw new Error("Missing 'Schedule' sheet.");
-
-  const range = XLSX.utils.decode_range(sheet["!ref"]!);
+  // Try "Schedule" sheet first, then fall back to first sheet
+  let sheet = workbook.Sheets["Schedule"];
+  if (!sheet) {
+    const firstSheetName = workbook.SheetNames[0];
+    if (!firstSheetName) throw new Error("Workbook has no sheets.");
+    sheet = workbook.Sheets[firstSheetName];
+    console.log(`Using sheet: ${firstSheetName}`);
+  }
+  
+  if (!sheet["!ref"]) throw new Error("Sheet is empty.");
+  const range = XLSX.utils.decode_range(sheet["!ref"]);
 
   // --------------------------------------
   // ROW DEFINITIONS
