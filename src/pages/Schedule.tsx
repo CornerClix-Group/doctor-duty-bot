@@ -1,18 +1,36 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Activity, ArrowLeft, Home } from 'lucide-react';
+import { Activity, ArrowLeft, Home, Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScheduleUpload } from '@/components/ScheduleUpload';
 import { ScheduleValidation } from '@/components/ScheduleValidation';
 import { SchedulingEngine } from '@/components/SchedulingEngine';
 import { ScheduleTable } from '@/components/ScheduleTable';
 import { ProviderStats } from '@/components/ProviderStats';
+import { supabase } from '@/integrations/supabase/client';
+import * as XLSX from 'xlsx';
+import { generateScheduleTemplate } from '@/lib/scheduleTemplateGenerator';
+import { exportFinalScheduleToExcel } from '@/lib/scheduleExporter';
 
 const Schedule = () => {
   const navigate = useNavigate();
   const [scheduleData, setScheduleData] = useState<any>(null);
   const [validationConfirmed, setValidationConfirmed] = useState(false);
   const [generatedSchedule, setGeneratedSchedule] = useState<any>(null);
+  const [providers, setProviders] = useState<any[]>([]);
+
+  useEffect(() => {
+    const fetchProviders = async () => {
+      const { data } = await supabase
+        .from('provider_profiles')
+        .select('first_name, last_name')
+        .order('last_name');
+      
+      if (data) setProviders(data);
+    };
+    
+    fetchProviders();
+  }, []);
 
   const handleBack = () => {
     if (generatedSchedule) {
@@ -30,6 +48,61 @@ const Schedule = () => {
     setScheduleData(null);
     setValidationConfirmed(false);
     setGeneratedSchedule(null);
+  };
+
+  const handleDownloadFinalSchedule = async () => {
+    if (!generatedSchedule || !providers.length) {
+      alert("No schedule generated yet or providers not loaded.");
+      return;
+    }
+
+    try {
+      // Parse month and year from schedule data
+      const monthYearMatch = generatedSchedule.month?.match(/(\w+)\s+(\d{4})/);
+      if (!monthYearMatch) {
+        alert("Invalid schedule month format");
+        return;
+      }
+
+      const monthName = monthYearMatch[1];
+      const year = parseInt(monthYearMatch[2]);
+      const monthIndex = new Date(`${monthName} 1, ${year}`).getMonth();
+
+      const providerNames = providers.map(
+        p => `${p.first_name} ${p.last_name}`.trim()
+      );
+
+      // 1. Create clean template
+      const templateWb = generateScheduleTemplate(monthIndex, year, providerNames);
+
+      // 2. Export filled schedule
+      const filledWb = exportFinalScheduleToExcel(
+        generatedSchedule.schedule,
+        templateWb,
+        providers.map(p => ({
+          name: `${p.first_name} ${p.last_name}`.trim()
+        }))
+      );
+
+      // 3. Convert + download
+      const wbout = XLSX.write(filledWb, { bookType: "xlsx", type: "array" });
+
+      const blob = new Blob([wbout], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      });
+
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `FinalSchedule-${monthName}-${year}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error("Failed to download schedule:", error);
+      alert("Failed to download schedule. Please try again.");
+    }
   };
 
   return (
@@ -113,6 +186,13 @@ const Schedule = () => {
           {/* Results Section */}
           {generatedSchedule && (
             <div className="space-y-8">
+              <div className="flex justify-end mb-4">
+                <Button onClick={handleDownloadFinalSchedule} size="lg">
+                  <Download className="mr-2 h-5 w-5" />
+                  Download Final Schedule
+                </Button>
+              </div>
+
               <ScheduleTable 
                 schedule={generatedSchedule.schedule}
                 month={generatedSchedule.month}
