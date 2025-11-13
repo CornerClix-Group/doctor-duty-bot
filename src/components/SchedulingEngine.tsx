@@ -40,65 +40,33 @@ export const SchedulingEngine = ({ scheduleData, onScheduleGenerated }: Scheduli
         throw new Error("Please upload a schedule file first before generating.");
       }
 
-      // Fetch provider_profiles and join with provider_constraints
-      const { data: profilesData, error: profilesError } = await supabase
-        .from('provider_profiles')
-        .select(`
-          *,
-          provider_constraints!provider_constraints_provider_id_fkey (*)
-        `);
-
-      if (profilesError) {
-        throw new Error(`Failed to fetch provider profiles: ${profilesError.message}`);
+      // Get the raw Excel file from the file input
+      const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+      if (!fileInput?.files?.[0]) {
+        throw new Error("No Excel file found. Please upload a schedule file.");
       }
 
-      if (!profilesData || profilesData.length === 0) {
-        throw new Error("No provider profiles found. Please add providers first.");
-      }
-
-      // Transform and merge: provider_constraints overrides provider_profiles
-      const provider_profiles = profilesData.map((profile: any) => {
-        const constraints = Array.isArray(profile.provider_constraints) 
-          ? profile.provider_constraints[0] 
-          : profile.provider_constraints;
-        
-        // Merge with constraints taking precedence for overlapping fields
-        return {
-          first_name: profile.first_name,
-          last_name: profile.last_name,
-          email: profile.email || '',
-          role: profile.role || 'provider',
-          // allowed_shifts: constraints overrides profile
-          allowed_shifts: constraints?.allowed_shifts || profile.allowed_shifts || [],
-          rules: {
-            disallowed_shifts: constraints?.disallowed_shifts || [],
-            // preferred_shifts: constraints overrides profile
-            preferred_shifts: constraints?.preferred_shifts || profile.preferred_shifts || [],
-            // rest_hours: constraints overrides profile
-            rest_hours: constraints?.rest_hours ?? profile.rest_hours ?? 12,
-            // n_recovery_days: constraints overrides profile
-            n_recovery_days: constraints?.n_recovery_days ?? profile.n_recovery_days ?? 2,
-            // block_pattern: constraints overrides profile
-            block_pattern: constraints?.block_pattern || profile.block_pattern || null,
-            max_consecutive_N: constraints?.max_consecutive_n || null,
-            // saturday_restrictions: constraints overrides profile
-            saturday_restrictions: constraints?.saturday_restrictions || profile.saturday_restrictions || null,
-            // sunday_restrictions: constraints overrides profile
-            sunday_restrictions: constraints?.sunday_restrictions || profile.sunday_restrictions || null,
-          }
+      const file = fileInput.files[0];
+      
+      // Convert to base64
+      const base64File = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const result = reader.result as string;
+          // Remove data URL prefix
+          const base64 = result.split(',')[1];
+          resolve(base64);
         };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
       });
 
-      console.log('Calling generate-schedule edge function with:', {
-        provider_profiles,
-        schedule_data: scheduleData
-      });
+      console.log('Calling generate-schedule-v2 with base64 Excel file');
 
-      // Call the edge function with snake_case parameter names
+      // Call the edge function with base64 Excel file
       const { data, error } = await supabase.functions.invoke('generate-schedule-v2', {
         body: {
-          provider_profiles,
-          schedule_data: scheduleData
+          file: base64File
         }
       });
 

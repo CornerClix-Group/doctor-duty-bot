@@ -1,617 +1,551 @@
+// ====================================================================
+// ========== HARD-CONSTRAINT MEDICAL SCHEDULING ENGINE ===============
+// ====================================================================
+//
+// Architecture:
+//  - Frontend uploads raw Excel base64 file
+//  - Edge function parses Excel
+//  - Provider rules merged from provider_profiles + provider_constraints
+//  - Hard-constraint deterministic scheduler (backtracking + validation)
+//  - Call (C) shift distribution
+//  - Save schedule to DB (Option C)
+//  - Return schedule JSON to frontend
+//
+// ====================================================================
+
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import * as XLSX from "https://esm.sh/v135/xlsx@0.18.5";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-// Deterministic Constraint Satisfaction Scheduler
-class DeterministicScheduler {
-  private scheduleData: any;
-  private providerProfiles: any[];
-  private lockedCells: Map<string, string>;
-  private schedule: any[];
-  private providerAssignments: Map<string, Map<string, string>>;
-  private warnings: string[];
-  private regularShifts = new Set(['D1', 'D2', 'MIDA', 'MIDB', 'E', 'N', 'FT AM', 'FT PM', 'FT W', 'FT W12']);
+// -------- Supabase Admin Client (service role) --------
+const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 
-  constructor(scheduleData: any, providerProfiles: any[]) {
-    this.scheduleData = scheduleData;
-    this.providerProfiles = providerProfiles;
-    this.lockedCells = new Map();
-    this.schedule = [];
-    this.providerAssignments = new Map();
-    this.warnings = [];
+// -------- Shift Definitions --------
+const SHIFT_START: Record<string, number> = {
+  "D1": 6,
+  "FT AM": 7,
+  "D2": 8,
+  "MIDA": 11,
+  "FT PM": 14,
+  "MIDB": 15,
+  "E": 17,
+  "N": 22,
+  "FT W": 10,
+  "FT W12": 12,
+  "C": 6,
+  "A10": 6
+};
+
+const SHIFT_END: Record<string, number> = {
+  "D1": 16,
+  "FT AM": 17,
+  "D2": 18,
+  "MIDA": 21,
+  "FT PM": 24,
+  "MIDB": 25,
+  "E": 27,
+  "N": 32,
+  "FT W": 20,
+  "FT W12": 22,
+  "C": 24,
+  "A10": 16
+};
+
+const PATTERN7 = ["D1", "D2", "MIDA", "MIDB", "E", "N", "FT W"];
+const PATTERN8 = ["D1", "D2", "MIDA", "MIDB", "E", "N", "FT AM", "FT PM"];
+
+// ====================================================================
+// ========================== EXCEL PARSER ============================
+// ====================================================================
+
+function parseScheduleFromExcel(workbook: XLSX.WorkBook) {
+  const sheet = workbook.Sheets[workbook.SheetNames[0]];
+  const range = XLSX.utils.decode_range(sheet['!ref'] || 'A1');
+
+  // Extract month and year from Row 1
+  const monthCell = sheet['A1']?.v || '';
+  const monthMatch = monthCell.match(/([A-Za-z]+)\s+(\d{4})/);
+  const month = monthMatch ? monthMatch[1] : '';
+  const year = monthMatch ? parseInt(monthMatch[2]) : new Date().getFullYear();
+
+  const dates: string[] = [];
+  const coverage_pattern: Record<string, number> = {};
+
+  // Row 4 = day number, Row 5 = pattern
+  for (let col = 2; col <= 32; col++) {
+    const dayNumCell = sheet[XLSX.utils.encode_cell({ r: 3, c: col })];
+    const patternCell = sheet[XLSX.utils.encode_cell({ r: 4, c: col })];
     
-    this.buildLockedCells();
+    if (dayNumCell?.v) {
+      const dayNum = parseInt(dayNumCell.v.toString());
+      const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+      const monthNum = monthNames.indexOf(month) + 1;
+      const dateStr = `${year}-${monthNum.toString().padStart(2, '0')}-${dayNum.toString().padStart(2, '0')}`;
+      dates.push(dateStr);
+      
+      const pattern = patternCell?.v ? parseInt(patternCell.v.toString()) : 7;
+      coverage_pattern[dateStr] = pattern;
+    }
   }
 
-  private buildLockedCells() {
-    for (const provider of this.scheduleData.providers) {
-      if (!provider.name) continue;
-      for (const day of provider.days ?? []) {
-        if (day.locked && day.value) {
-          this.lockedCells.set(`${day.date}|${provider.name}`, day.value);
-        }
+  // Parse providers starting from Row 6
+  const providers: any[] = [];
+  
+  for (let row = 5; row <= range.e.r; row++) {
+    const nameCell = sheet[XLSX.utils.encode_cell({ r: row, c: 0 })];
+    if (!nameCell?.v) continue;
+    
+    const name = nameCell.v.toString().trim();
+    if (!name || name === 'TOTAL') break;
+
+    const weekendQuotaCell = sheet[XLSX.utils.encode_cell({ r: row, c: 1 })];
+    const targetShiftsCell = sheet[XLSX.utils.encode_cell({ r: row, c: 34 })];
+
+    const weekend_quota = weekendQuotaCell?.v ? parseInt(weekendQuotaCell.v.toString()) : 0;
+    const target_shifts = targetShiftsCell?.v ? parseInt(targetShiftsCell.v.toString()) : 0;
+
+    const days: any[] = [];
+
+    dates.forEach((dateStr, idx) => {
+      const col = idx + 2;
+      const cell = sheet[XLSX.utils.encode_cell({ r: row, c: col })];
+      const value = cell?.v?.toString().trim() || '';
+
+      // Locked if it contains actual shift codes or block codes
+      const isShiftCode = ['D1', 'D2', 'MIDA', 'MIDB', 'E', 'N', 'FT AM', 'FT PM', 'FT W', 'FT W12', 'C', 'A10'].includes(value);
+      const isBlockCode = ['X', 'L', 'HL'].includes(value);
+      const locked = isShiftCode || isBlockCode;
+
+      days.push({
+        date: dateStr,
+        value: value,
+        locked: locked
+      });
+    });
+
+    providers.push({
+      name,
+      weekend_quota,
+      target_shifts,
+      days
+    });
+  }
+
+  return {
+    month,
+    year,
+    coverage_pattern,
+    providers
+  };
+}
+
+// ====================================================================
+// ========================== MERGE RULES =============================
+// ====================================================================
+
+function mergeRules(profiles: any[], constraints: any[]) {
+  return profiles.map(profile => {
+    const c = constraints.find(x => x.provider_id === profile.id);
+
+    return {
+      name: `${profile.first_name} ${profile.last_name}`.trim(),
+      allowed_shifts: c?.allowed_shifts ?? profile.allowed_shifts ?? [],
+      preferred_shifts: c?.preferred_shifts ?? profile.preferred_shifts ?? [],
+      rest_hours: c?.rest_hours ?? profile.rest_hours ?? 12,
+      n_recovery_days: c?.n_recovery_days ?? profile.n_recovery_days ?? 2,
+      rules: {
+        disallowed_shifts: c?.disallowed_shifts ?? [],
+        saturday_restrictions: c?.saturday_restrictions ?? profile.saturday_restrictions ?? null,
+        sunday_restrictions: c?.sunday_restrictions ?? profile.sunday_restrictions ?? null,
+        max_consecutive_n: c?.max_consecutive_n ?? null,
+        block_pattern: c?.block_pattern ?? profile.block_pattern ?? null,
+        weekend_rules: c?.weekend_rules ?? []
+      }
+    };
+  });
+}
+
+// ====================================================================
+// =================== HARD SCHEDULER ENGINE ==========================
+// ====================================================================
+
+class HardScheduler {
+  coverage_pattern: Record<string, number>;
+  providers: any[];
+  rules: any[];
+  days: string[];
+  assignments: Map<string, Map<string, string>>;
+
+  constructor(input: any, providerRules: any[]) {
+    this.coverage_pattern = input.coverage_pattern;
+    this.providers = input.providers;
+    this.rules = providerRules;
+    this.days = Object.keys(this.coverage_pattern).sort();
+
+    this.assignments = new Map();
+    this.providers.forEach(p => this.assignments.set(p.name, new Map()));
+  }
+
+  getRule(name: string) {
+    return this.rules.find(r => r.name === name) || {};
+  }
+
+  isWeekend(date: string) {
+    const dow = new Date(date).getDay();
+    return dow === 0 || dow === 6;
+  }
+
+  violatesRest(provider: string, dateStr: string, shift: string): boolean {
+    const assigned = this.assignments.get(provider);
+    if (!assigned) return false;
+
+    for (const [oldDate, oldShift] of assigned.entries()) {
+      const diffHours = Math.abs(new Date(dateStr).getTime() - new Date(oldDate).getTime()) / 36e5;
+
+      if (diffHours < 48) {
+        const endHr = SHIFT_END[oldShift] > 24 ? SHIFT_END[oldShift] - 24 : SHIFT_END[oldShift];
+        const startHr = SHIFT_START[shift];
+        if (endHr + diffHours < startHr + 12) return true;
+      }
+
+      const rule = this.getRule(provider);
+      const recovery = rule.n_recovery_days ?? 2;
+
+      if (oldShift === "N" && shift !== "N") {
+        if (diffHours < recovery * 24) return true;
       }
     }
-  }
-
-  private getProviderProfile(providerName: string) {
-    return this.providerProfiles.find(
-      (p: any) => `${p.first_name} ${p.last_name}` === providerName
-    );
-  }
-
-  private getRequiredShifts(date: string, pattern: number): string[] {
-    const shifts = pattern === 7
-      ? ['D1', 'D2', 'MIDA', 'MIDB', 'E', 'N', 'FT W']
-      : ['D1', 'D2', 'MIDA', 'MIDB', 'E', 'N', 'FT AM', 'FT PM'];
-    
-    // Add FT W12 on Sundays for pattern 7
-    if (pattern === 7 && new Date(date).getDay() === 0) {
-      shifts.push('FT W12');
-    }
-    
-    return shifts;
-  }
-
-  private isWeekend(date: string): boolean {
-    const day = new Date(date).getDay();
-    return day === 0 || day === 6;
-  }
-
-  private getShiftEndTime(shift: string, pattern: number): number {
-    const shiftTimes: Record<string, number> = pattern === 7 ? {
-      'D1': 16, 'D2': 18, 'MIDA': 21, 'MIDB': 24,
-      'E': 26, 'N': 31, 'FT W': 18, 'FT W12': 22, 'C': 22, 'A10': 17
-    } : {
-      'D1': 15, 'D2': 17, 'MIDA': 20, 'MIDB': 24,
-      'E': 26, 'N': 31, 'FT AM': 15, 'FT PM': 24, 'C': 22, 'A10': 17
-    };
-    return shiftTimes[shift] || 18;
-  }
-
-  private getShiftStartTime(shift: string, pattern: number): number {
-    const shiftTimes: Record<string, number> = pattern === 7 ? {
-      'D1': 6, 'D2': 8, 'MIDA': 11, 'MIDB': 14,
-      'E': 16, 'N': 21, 'FT W': 8, 'FT W12': 12, 'C': 6, 'A10': 8
-    } : {
-      'D1': 6, 'D2': 8, 'MIDA': 11, 'MIDB': 15,
-      'E': 17, 'N': 22, 'FT AM': 6, 'FT PM': 15, 'C': 6, 'A10': 8
-    };
-    return shiftTimes[shift] || 8;
-  }
-
-  private violatesRestRequirement(providerName: string, date: string, shift: string, pattern: number): boolean {
-    const assignments = this.providerAssignments.get(providerName);
-    if (!assignments) return false;
-
-    const currentDate = new Date(date);
-    const shiftStart = this.getShiftStartTime(shift, pattern);
-
-    // Check previous day
-    const prevDate = new Date(currentDate);
-    prevDate.setDate(prevDate.getDate() - 1);
-    const prevDateStr = prevDate.toISOString().split('T')[0];
-    const prevShift = assignments.get(prevDateStr);
-    
-    if (prevShift) {
-      const prevPattern = this.scheduleData.coverage_pattern[prevDateStr] || pattern;
-      const prevEnd = this.getShiftEndTime(prevShift, prevPattern);
-      const hoursBetween = (24 - prevEnd) + shiftStart;
-      if (hoursBetween < 12) return true;
-
-      // N-shift recovery: 2 full days off after N shift before any non-N shift
-      if (prevShift === 'N' && shift !== 'N') {
-        const daysSinceN = this.countDaysSinceLastN(providerName, date);
-        if (daysSinceN < 2) return true;
-      }
-    }
-
     return false;
   }
 
-  private countDaysSinceLastN(providerName: string, currentDate: string): number {
-    const assignments = this.providerAssignments.get(providerName);
-    if (!assignments) return 999;
+  eligible(provider: string, dateStr: string, shift: string): boolean {
+    const profile = this.getRule(provider);
+    const prov = this.providers.find(p => p.name === provider);
+    if (!prov) return false;
 
-    const current = new Date(currentDate);
-    let daysOff = 0;
-    
-    for (let i = 1; i <= 3; i++) {
-      const checkDate = new Date(current);
-      checkDate.setDate(checkDate.getDate() - i);
-      const checkDateStr = checkDate.toISOString().split('T')[0];
-      const shift = assignments.get(checkDateStr);
-      
-      if (shift === 'N') return daysOff;
-      if (!shift || shift === 'X' || shift === 'L') daysOff++;
+    const dayObj = prov.days.find((d: any) => d.date === dateStr);
+    if (!dayObj) return false;
+
+    // If locked and not this shift, ineligible
+    if (dayObj.locked && dayObj.value !== shift && dayObj.value !== '') {
+      // Block codes mean day off - can't assign any shift
+      if (['X', 'L', 'HL'].includes(dayObj.value)) return false;
+      // Different shift assignment locked
+      return false;
     }
-    
-    return 999;
-  }
 
-  private isProviderEligible(providerName: string, date: string, shift: string, pattern: number): boolean {
-    // Check locked status
-    const lockedValue = this.lockedCells.get(`${date}|${providerName}`);
-    if (lockedValue === 'X' || lockedValue === 'L' || lockedValue === 'LH') return false;
-    if (lockedValue && lockedValue !== shift) return false;
+    // Allowed/disallowed
+    if (profile.allowed_shifts?.length && !profile.allowed_shifts.includes(shift)) return false;
+    if (profile.rules?.disallowed_shifts?.includes(shift)) return false;
 
-    // Check if already assigned on this day
-    const assignments = this.providerAssignments.get(providerName);
-    if (assignments?.has(date)) return false;
+    // Sat/Sun rules
+    const dow = new Date(dateStr).getDay();
 
-    // Check weekend restrictions for C and A10
-    if ((shift === 'C' || shift === 'A10') && this.isWeekend(date)) return false;
-
-    // Check rest requirements
-    if (this.violatesRestRequirement(providerName, date, shift, pattern)) return false;
-
-    // Check provider constraints
-    const profile = this.getProviderProfile(providerName);
-    if (profile) {
-      const allowed = profile.allowed_shifts || [];
-      const disallowed = profile.rules?.disallowed_shifts || [];
-      
-      if (allowed.length > 0 && !allowed.includes(shift)) return false;
-      if (disallowed.includes(shift)) return false;
-
-      // Check Saturday/Sunday restrictions
-      const dayOfWeek = new Date(date).getDay();
-      if (dayOfWeek === 6 && profile.rules?.saturday_restrictions) {
-        const satRestrictions = profile.rules.saturday_restrictions.split(',').map((s: string) => s.trim());
-        if (!satRestrictions.includes(shift) && !satRestrictions.includes('all')) return false;
-      }
-      if (dayOfWeek === 0 && profile.rules?.sunday_restrictions) {
-        const sunRestrictions = profile.rules.sunday_restrictions.split(',').map((s: string) => s.trim());
-        if (!sunRestrictions.includes(shift) && !sunRestrictions.includes('all')) return false;
-      }
+    if (dow === 6 && profile.rules?.saturday_restrictions) {
+      const allowed = profile.rules.saturday_restrictions.split(",").map((s: string) => s.trim());
+      if (!allowed.includes(shift)) return false;
     }
+
+    if (dow === 0 && profile.rules?.sunday_restrictions) {
+      const allowed = profile.rules.sunday_restrictions.split(",").map((s: string) => s.trim());
+      if (!allowed.includes(shift)) return false;
+    }
+
+    // Rest logic
+    if (this.violatesRest(provider, dateStr, shift)) return false;
 
     return true;
   }
 
-  private getEligibleProviders(date: string, shift: string, pattern: number): string[] {
-    const eligible: string[] = [];
+  requiredShifts(dateStr: string): string[] {
+    const pattern = this.coverage_pattern[dateStr];
+    const base = pattern === 7 ? [...PATTERN7] : [...PATTERN8];
     
-    for (const provider of this.scheduleData.providers) {
-      if (!provider.name) continue;
-      if (this.isProviderEligible(provider.name, date, shift, pattern)) {
-        eligible.push(provider.name);
-      }
+    // Add FT W12 for Sundays in Pattern 7
+    if (pattern === 7 && new Date(dateStr).getDay() === 0) {
+      base.push("FT W12");
     }
-
-    return this.sortProvidersByPriority(eligible, shift, date);
+    
+    return base;
   }
 
-  private sortProvidersByPriority(providers: string[], shift: string, date: string): string[] {
-    return providers.sort((a, b) => {
-      const aAssignments = this.providerAssignments.get(a);
-      const bAssignments = this.providerAssignments.get(b);
-      const aCount = aAssignments ? aAssignments.size : 0;
-      const bCount = bAssignments ? bAssignments.size : 0;
+  solve() {
+    console.log("Starting HardScheduler.solve()");
+    
+    // First, apply all locked assignments
+    this.applyLockedAssignments();
+    
+    if (!this.backtrack(0)) {
+      throw new Error("Cannot satisfy hard scheduling constraints.");
+    }
 
-      const aProvider = this.scheduleData.providers.find((p: any) => p.name === a);
-      const bProvider = this.scheduleData.providers.find((p: any) => p.name === b);
-      const aTarget = aProvider?.target_shifts || 0;
-      const bTarget = bProvider?.target_shifts || 0;
+    this.assignCallShifts();
+    this.validateTotals();
 
-      const aDeficit = aTarget - aCount;
-      const bDeficit = bTarget - bCount;
+    return {
+      schedule: this.toOutput(),
+      providerTotals: this.computeTotals(),
+      warnings: []
+    };
+  }
 
-      // Prioritize providers furthest behind their target
-      if (aDeficit !== bDeficit) return bDeficit - aDeficit;
-
-      // For D1 shifts, prioritize Lopez > Arnett > others
-      if (shift === 'D1') {
-        if (a.includes('Lopez')) return -1;
-        if (b.includes('Lopez')) return 1;
-        if (a.includes('Arnett')) return -1;
-        if (b.includes('Arnett')) return 1;
-      }
-
-      return 0;
+  applyLockedAssignments() {
+    this.providers.forEach(p => {
+      p.days.forEach((day: any) => {
+        if (day.locked && day.value && !['X', 'L', 'HL'].includes(day.value)) {
+          this.assignments.get(p.name)?.set(day.date, day.value);
+          console.log(`Locked: ${p.name} → ${day.date} → ${day.value}`);
+        }
+      });
     });
   }
 
-  private assignShift(providerName: string, date: string, shift: string) {
-    if (!this.providerAssignments.has(providerName)) {
-      this.providerAssignments.set(providerName, new Map());
-    }
-    this.providerAssignments.get(providerName)!.set(date, shift);
+  backtrack(idx: number): boolean {
+    if (idx >= this.days.length) return true;
+
+    const dateStr = this.days[idx];
+    const shifts = this.requiredShifts(dateStr);
+
+    const already = new Set<string>();
+    this.providers.forEach(p => {
+      const a = this.assignments.get(p.name)?.get(dateStr);
+      if (a) already.add(a);
+    });
+
+    const needed = shifts.filter(s => !already.has(s));
+    return this.assignShiftsForDay(dateStr, needed, 0, idx);
   }
 
-  private applyLockedCells() {
-    console.log("[CSP] Applying locked cells...");
-    
-    for (const [key, value] of this.lockedCells.entries()) {
-      const [date, providerName] = key.split('|');
-      
-      // X, L, LH mean off - no assignment needed
-      if (value === 'X' || value === 'L' || value === 'LH') continue;
-      
-      // Assign the locked shift
-      this.assignShift(providerName, date, value);
-    }
-  }
+  assignShiftsForDay(dateStr: string, needed: string[], i: number, dayIndex: number): boolean {
+    if (i >= needed.length) return this.backtrack(dayIndex + 1);
 
-  private fillSchedule() {
-    console.log("[CSP] Filling schedule with backtracking search...");
-    
-    // Get all dates sorted
-    const dates = Object.keys(this.scheduleData.coverage_pattern).sort();
-    
-    // Build list of all unfilled shift slots
-    const unfilledSlots: Array<{ date: string; shift: string; pattern: number }> = [];
-    
-    for (const date of dates) {
-      const pattern = this.scheduleData.coverage_pattern[date];
-      const requiredShifts = this.getRequiredShifts(date, pattern);
-      
-      // Get already assigned shifts (from locked cells)
-      const assignedShifts = new Set<string>();
-      for (const [pName, assignments] of this.providerAssignments.entries()) {
-        const shift = assignments.get(date);
-        if (shift) assignedShifts.add(shift);
-      }
-      
-      // Collect unfilled slots
-      for (const shift of requiredShifts) {
-        if (!assignedShifts.has(shift)) {
-          unfilledSlots.push({ date, shift, pattern });
-        }
-      }
-    }
-    
-    console.log(`[CSP] Found ${unfilledSlots.length} unfilled slots, starting backtracking search...`);
-    
-    // Attempt backtracking search
-    const success = this.backtrackSearch(unfilledSlots, 0);
-    
-    if (!success) {
-      console.log("[CSP] Backtracking search exhausted - some shifts could not be filled");
-    } else {
-      console.log("[CSP] Backtracking search completed successfully");
-    }
-  }
+    const shift = needed[i];
 
-  private backtrackSearch(slots: Array<{ date: string; shift: string; pattern: number }>, slotIndex: number): boolean {
-    // Base case: all slots filled
-    if (slotIndex >= slots.length) {
-      return true;
-    }
-    
-    const { date, shift, pattern } = slots[slotIndex];
-    const eligible = this.getEligibleProviders(date, shift, pattern);
-    
-    // No eligible providers for this slot - backtrack
-    if (eligible.length === 0) {
-      this.warnings.push(`No eligible providers for ${shift} on ${date} - backtracking...`);
-      return false;
-    }
-    
-    // Try each eligible provider
-    for (const providerName of eligible) {
-      // Make assignment
-      this.assignShift(providerName, date, shift);
-      
-      // Recursively try to fill remaining slots
-      if (this.backtrackSearch(slots, slotIndex + 1)) {
-        return true; // Success!
+    const order = shift === "D1" ? this.D1Priority() : [...this.providers];
+
+    for (const p of order) {
+      if (this.assignments.get(p.name)?.has(dateStr)) continue;
+      if (!this.eligible(p.name, dateStr, shift)) continue;
+
+      this.assignments.get(p.name)?.set(dateStr, shift);
+
+      if (this.assignShiftsForDay(dateStr, needed, i + 1, dayIndex)) {
+        return true;
       }
-      
-      // Backtrack: undo this assignment
-      this.undoAssignment(providerName, date);
+
+      this.assignments.get(p.name)?.delete(dateStr);
     }
-    
-    // All providers tried and failed - backtrack further
+
     return false;
   }
 
-  private undoAssignment(providerName: string, date: string) {
-    const assignments = this.providerAssignments.get(providerName);
-    if (assignments) {
-      assignments.delete(date);
+  D1Priority() {
+    const pri = ["Lopez", "Arnett"];
+    const first: any[] = [];
+    const rest: any[] = [];
+
+    for (const p of this.providers) {
+      if (pri.includes(p.name)) first.push(p);
+      else rest.push(p);
     }
+    return [...first, ...rest];
   }
 
-  private computePayPeriod(date: string): number {
-    const startDate = new Date(this.scheduleData.providers[0].days[0].date);
-    const currentDate = new Date(date);
-    const daysDiff = Math.floor((currentDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
-    return Math.floor(daysDiff / 14) + 1;
-  }
+  assignCallShifts() {
+    this.days.forEach(dateStr => {
+      // Skip weekends for Call shifts
+      if (this.isWeekend(dateStr)) return;
 
-  private buildOutputSchedule() {
-    console.log("[CSP] Building output schedule...");
-    
-    const dates = Object.keys(this.scheduleData.coverage_pattern).sort();
-    const schedule = [];
-    
-    for (const date of dates) {
-      const pattern = this.scheduleData.coverage_pattern[date];
-      const payPeriod = this.computePayPeriod(date);
-      const requiredShifts = this.getRequiredShifts(date, pattern);
-      
-      const assignments = [];
-      
-      // First, add all required coverage shifts
-      for (const shift of requiredShifts) {
-        let provider = '';
-        
-        // Find who is assigned to this shift
-        for (const [pName, pAssignments] of this.providerAssignments.entries()) {
-          if (pAssignments.get(date) === shift) {
-            provider = pName;
-            break;
-          }
-        }
-        
-        assignments.push({ shift, provider });
+      const eligible = this.providers.filter(p => {
+        if (p.name === "Akers") return false;
+        return this.eligible(p.name, dateStr, "C");
+      });
+
+      if (!eligible.length) {
+        console.warn(`No eligible provider for CALL on ${dateStr}`);
+        return;
       }
-      
-      // Add all locked cell entries (including A10, C, and non-coverage shifts)
-      for (const [key, value] of this.lockedCells.entries()) {
-        const [lockedDate, providerName] = key.split('|');
-        if (lockedDate === date && value) {
-          // For X/L/LH, just add them
-          if (value === 'X' || value === 'L' || value === 'LH') {
-            assignments.push({ shift: value, provider: providerName });
-          } 
-          // For actual shifts, only add if not already in required shifts
-          else if (!requiredShifts.includes(value)) {
-            assignments.push({ shift: value, provider: providerName });
-          }
-        }
-      }
-      
-      schedule.push({ date, pattern, pay_period: payPeriod, assignments });
-    }
-    
-    return schedule;
+
+      eligible.sort((a, b) => {
+        const aCount = [...(this.assignments.get(a.name)?.values() || [])].filter(s => s === "C").length;
+        const bCount = [...(this.assignments.get(b.name)?.values() || [])].filter(s => s === "C").length;
+        return aCount - bCount;
+      });
+
+      this.assignments.get(eligible[0].name)?.set(dateStr, "C");
+    });
   }
 
-  private computeTotals() {
-    console.log("[CSP] Computing provider totals...");
-    
-    const providerTotals: Record<string, any> = {};
-    const payPeriodTotals: Record<string, Record<string, number>> = {};
-    
-    for (const provider of this.scheduleData.providers) {
-      const name = provider.name;
-      if (!name) continue;
-      
-      providerTotals[name] = {
-        worked: 0,
-        weekends: 0,
-        call: 0,
-        admin: 0,
-        target: provider.target_shifts || 0,
-        weekend_quota: provider.weekend_quota || 0
+  validateTotals() {
+    this.providers.forEach(p => {
+      const assigned = [...(this.assignments.get(p.name)?.values() || [])].filter(s => !!s);
+
+      if (assigned.length !== p.target_shifts) {
+        throw new Error(
+          `Shift mismatch for ${p.name}: expected ${p.target_shifts}, got ${assigned.length}`
+        );
+      }
+
+      const weekends = [...(this.assignments.get(p.name)?.entries() || [])]
+        .filter(([d]) => this.isWeekend(d));
+
+      if (weekends.length !== p.weekend_quota) {
+        throw new Error(`Weekend quota mismatch for ${p.name}: expected ${p.weekend_quota}, got ${weekends.length}`);
+      }
+    });
+  }
+
+  computeTotals() {
+    const totals: Record<string, any> = {};
+    this.providers.forEach(p => {
+      const allShifts = [...(this.assignments.get(p.name)?.values() || [])].filter(Boolean);
+      const weekendShifts = [...(this.assignments.get(p.name)?.entries() || [])]
+        .filter(([d]) => this.isWeekend(d)).length;
+
+      totals[p.name] = {
+        worked: allShifts.length,
+        weekends: weekendShifts,
+        call: allShifts.filter(s => s === "C").length,
+        admin: allShifts.filter(s => s === "A10").length,
+        target: p.target_shifts,
+        weekend_quota: p.weekend_quota
       };
-      payPeriodTotals[name] = {};
-    }
-    
-    const dates = Object.keys(this.scheduleData.coverage_pattern).sort();
-    
-    for (const date of dates) {
-      const payPeriod = this.computePayPeriod(date);
-      const isWeekend = this.isWeekend(date);
-      
-      for (const [providerName, assignments] of this.providerAssignments.entries()) {
-        const shift = assignments.get(date);
-        if (!shift) continue;
-        
-        if (!providerTotals[providerName]) continue;
-        
-        const ppKey = `PP${payPeriod}`;
-        if (!payPeriodTotals[providerName][ppKey]) {
-          payPeriodTotals[providerName][ppKey] = 0;
-        }
-        
-        if (shift === 'C') {
-          providerTotals[providerName].call++;
-          payPeriodTotals[providerName][ppKey]++;
-        } else if (shift === 'A10') {
-          providerTotals[providerName].admin++;
-          payPeriodTotals[providerName][ppKey]++;
-        } else if (this.regularShifts.has(shift)) {
-          providerTotals[providerName].worked++;
-          payPeriodTotals[providerName][ppKey]++;
-          if (isWeekend) {
-            providerTotals[providerName].weekends++;
-          }
-        }
-      }
-    }
-    
-    return { providerTotals, payPeriodTotals };
+    });
+    return totals;
   }
 
-  generate() {
-    console.log("[CSP] Starting deterministic schedule generation...");
+  toOutput() {
+    const out: any[] = [];
     
-    // Step 1: Apply locked cells
-    this.applyLockedCells();
-    
-    // Step 2: Fill remaining shifts
-    this.fillSchedule();
-    
-    // Step 3: Build output
-    const schedule = this.buildOutputSchedule();
-    const { providerTotals, payPeriodTotals } = this.computeTotals();
-    
-    return {
-      month: this.scheduleData.month,
-      schedule,
-      provider_totals: providerTotals,
-      pay_period_totals: payPeriodTotals,
-      warnings: this.warnings
-    };
+    this.days.forEach(dateStr => {
+      const pattern = this.coverage_pattern[dateStr];
+      const assignments: any[] = [];
+
+      this.providers.forEach(p => {
+        const shift = this.assignments.get(p.name)?.get(dateStr);
+        if (shift) {
+          assignments.push({ shift, provider: p.name });
+        }
+      });
+
+      out.push({
+        date: dateStr,
+        pattern,
+        pay_period: 1,
+        assignments
+      });
+    });
+
+    return out;
   }
 }
 
+// ====================================================================
+// ========================== MAIN EDGE FUNCTION =======================
+// ====================================================================
+
 serve(async (req) => {
-  if (req.method === "OPTIONS") {
+  if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    const { provider_profiles, schedule_data } = await req.json();
+    console.log("=== Schedule Generation Request Received ===");
 
-    // Validate inputs
-    if (!schedule_data?.month || !schedule_data?.providers?.length) {
-      return new Response(
-        JSON.stringify({ error: "Invalid schedule_data" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-    if (!Array.isArray(provider_profiles) || provider_profiles.length === 0) {
-      return new Response(
-        JSON.stringify({ error: "Missing provider_profiles" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
+    const body = await req.json();
+    const base64 = body.file;
+    if (!base64) throw new Error("Missing Excel base64 file.");
 
-    console.log("[CSP] Using deterministic constraint satisfaction scheduler...");
+    // Decode Excel
+    const workbook = XLSX.read(base64, { type: "base64" });
 
-    // Generate schedule using deterministic algorithm
-    const scheduler = new DeterministicScheduler(schedule_data, provider_profiles);
-    const data = scheduler.generate();
+    // Server-side parsing
+    const input = parseScheduleFromExcel(workbook);
+    console.log(`Parsed: ${input.month} ${input.year}, ${input.providers.length} providers`);
 
-    // Validation report
-    const validationReport = {
-      lockedCellsPreserved: 0,
-      lockedCellViolations: [] as string[],
-      constraintViolations: [] as string[],
-      unfilledShifts: [] as string[],
-      providerMismatches: [] as string[]
-    };
+    // Extract user from JWT
+    const token = req.headers.get("Authorization")?.replace("Bearer ", "");
+    const { data: { user } } = await supabaseAdmin.auth.getUser(token || "");
+    const created_by = user?.id ?? null;
 
-    // Build locked cells map for validation
-    const lockedMap = new Map<string, string>();
-    for (const p of schedule_data.providers) {
-      if (!p.name) continue;
-      for (const d of p.days ?? []) {
-        if (d.locked && d.value) {
-          lockedMap.set(`${d.date}|${p.name}`, d.value);
-        }
-      }
-    }
+    // Fetch DB rules
+    const { data: profiles, error: profilesError } = await supabaseAdmin
+      .from("provider_profiles")
+      .select("*");
 
-    console.log("[CSP] Locked cells map:", Array.from(lockedMap.entries()).slice(0, 20));
+    if (profilesError) throw new Error(`Profile fetch failed: ${profilesError.message}`);
 
-    // Track all locked cells and verify preservation
-    lockedMap.forEach((lockedValue, key) => {
-      const [date, providerName] = key.split("|");
-      const daySchedule = data.schedule?.find((d: any) => d.date === date);
-      if (!daySchedule) return;
+    const { data: constraints, error: constraintsError } = await supabaseAdmin
+      .from("provider_constraints")
+      .select("*");
 
-      const providerAssignments = daySchedule.assignments?.filter((a: any) => a.provider === providerName) || [];
+    if (constraintsError) throw new Error(`Constraints fetch failed: ${constraintsError.message}`);
 
-      if (lockedValue === 'X' || lockedValue === 'L' || lockedValue === 'LH') {
-        // Provider MUST be off (no assignments)
-        if (providerAssignments.length > 0) {
-          validationReport.lockedCellViolations.push(
-            `${date} ${providerName}: locked as ${lockedValue} but assigned to ${providerAssignments.map((a: any) => a.shift).join(', ')}`
-          );
-        } else {
-          validationReport.lockedCellsPreserved++;
-        }
-      } else {
-        // Provider MUST be assigned to exact shift
-        const hasCorrectShift = providerAssignments.some((a: any) => a.shift === lockedValue);
-        const otherShifts = providerAssignments.filter((a: any) => a.shift !== lockedValue);
-        
-        if (!hasCorrectShift) {
-          validationReport.lockedCellViolations.push(
-            `${date} ${providerName}: expected ${lockedValue}, but assigned to ${providerAssignments.map((a: any) => a.shift).join(', ') || 'nothing'}`
-          );
-        } else if (otherShifts.length > 0) {
-          validationReport.lockedCellViolations.push(
-            `${date} ${providerName}: locked to ${lockedValue} but also assigned to ${otherShifts.map((a: any) => a.shift).join(', ')}`
-          );
-        } else {
-          validationReport.lockedCellsPreserved++;
-        }
-      }
-    });
+    const mergedRules = mergeRules(profiles || [], constraints || []);
+    console.log(`Merged rules for ${mergedRules.length} providers`);
 
-    // Check for constraint violations and unfilled shifts
-    for (const daySchedule of data.schedule ?? []) {
-      const requiredShifts = daySchedule.pattern === 7 
-        ? ['D1', 'D2', 'MIDA', 'MIDB', 'E', 'N', 'FT W']
-        : ['D1', 'D2', 'MIDA', 'MIDB', 'E', 'N', 'FT AM', 'FT PM'];
-      
-      if (daySchedule.pattern === 7 && new Date(daySchedule.date).getDay() === 0) {
-        requiredShifts.push('FT W12');
-      }
+    // Run deterministic hard scheduler
+    const engine = new HardScheduler(input, mergedRules);
+    const result = engine.solve();
 
-      for (const shift of requiredShifts) {
-        const assignment = daySchedule.assignments?.find((a: any) => a.shift === shift);
-        if (!assignment || !assignment.provider) {
-          validationReport.unfilledShifts.push(`${daySchedule.date} ${shift}`);
-        } else {
-          // Check if provider is allowed to work this shift
-          const profile = provider_profiles.find((pp: any) => 
-            `${pp.first_name} ${pp.last_name}` === assignment.provider
-          );
-          if (profile) {
-            const allowed = profile.allowed_shifts || [];
-            const disallowed = profile.rules?.disallowed_shifts || [];
-            
-            if (allowed.length > 0 && !allowed.includes(shift)) {
-              validationReport.constraintViolations.push(
-                `${daySchedule.date} ${assignment.provider} assigned to ${shift}, but only allowed: ${allowed.join(', ')}`
-              );
-            }
-            if (disallowed.includes(shift)) {
-              validationReport.constraintViolations.push(
-                `${daySchedule.date} ${assignment.provider} assigned to ${shift}, but it's disallowed`
-              );
-            }
-          }
-        }
-      }
+    console.log("✓ Schedule generation complete");
+
+    // Save schedule (Option C)
+    const { data: saved, error: saveError } = await supabaseAdmin
+      .from("schedules")
+      .insert({
+        month: input.month,
+        year: input.year,
+        schedule_data: result.schedule,
+        provider_totals: result.providerTotals,
+        created_by
+      })
+      .select()
+      .single();
+
+    if (saveError) {
+      console.error("Save error:", saveError);
+    } else {
+      console.log(`✓ Saved schedule ID: ${saved.id}`);
     }
 
-    // Block schedule if critical violations exist
-    if (validationReport.lockedCellViolations.length > 0) {
-      console.error("[CSP] CRITICAL: Locked cell violations detected:", validationReport.lockedCellViolations);
-      return new Response(
-        JSON.stringify({
-          error: "Locked cell violations detected",
-          validation: validationReport
-        }),
-        { status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    // Attach validation report to response (even if successful)
-    const result = {
-      ...data,
-      validation: validationReport
-    };
-
-    console.log("[CSP] Schedule generated successfully");
-    console.log("[CSP] Validation report:", {
-      preserved: validationReport.lockedCellsPreserved,
-      violations: validationReport.lockedCellViolations.length,
-      constraintIssues: validationReport.constraintViolations.length,
-      unfilled: validationReport.unfilledShifts.length
-    });
-
-    return new Response(JSON.stringify(result), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
-  } catch (error: any) {
-    console.error("[CSP] Error in generate-schedule-v2 function:", error);
     return new Response(
-      JSON.stringify({ error: error.message || "Failed to generate schedule" }),
+      JSON.stringify({
+        schedule: result.schedule,
+        provider_totals: result.providerTotals,
+        pay_period_totals: {},
+        warnings: result.warnings,
+        saved_id: saved?.id
+      }),
+      { 
+        headers: { 
+          ...corsHeaders,
+          "Content-Type": "application/json" 
+        } 
+      }
+    );
+
+  } catch (err: any) {
+    console.error("=== Schedule Generation Failed ===");
+    console.error(err);
+    return new Response(
+      JSON.stringify({ 
+        error: err.message,
+        details: err.stack
+      }), 
       {
         status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "application/json"
+        }
       }
     );
   }
