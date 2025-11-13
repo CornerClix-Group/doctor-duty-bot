@@ -180,8 +180,16 @@ export const ScheduleUpload = ({ onScheduleLoad, selectedMonth: propMonth, selec
         }
       }
 
-      const providerNames = providers.map((p) =>
-        (p as any).name ? (p as any).name : `${p.first_name} ${p.last_name}`.trim()
+      // Sort providers by last_name, then first_name
+      const sortedProviders = [...providers].sort((a, b) => {
+        const last = a.last_name.localeCompare(b.last_name);
+        if (last !== 0) return last;
+        return a.first_name.localeCompare(b.first_name);
+      });
+
+      // Provide full name for the template (keeps scheduler compatibility)
+      const providerNames = sortedProviders.map(
+        (p) => `${p.first_name} ${p.last_name}`.trim()
       );
 
       if (!providerNames.length) {
