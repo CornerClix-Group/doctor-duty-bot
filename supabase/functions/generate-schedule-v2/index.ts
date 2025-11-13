@@ -230,6 +230,11 @@ class HardScheduler {
     const prov = this.providers.find(p => p.name === provider);
     if (!prov) return false;
 
+    // Check if provider has reached target_shifts limit
+    const currentShifts = [...(this.assignments.get(provider)?.values() || [])]
+      .filter(s => s && !['X', 'L', 'HL'].includes(s)).length;
+    if (currentShifts >= prov.target_shifts) return false;
+
     const dayObj = prov.days.find((d: any) => d.date === dateStr);
     if (!dayObj) return false;
 
