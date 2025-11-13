@@ -17,6 +17,7 @@ import * as XLSX from "https://esm.sh/v135/xlsx@0.18.5";
 
 import { parseSchedule } from "./scheduleParser.ts";
 import { HardScheduler } from "./HardScheduler.ts";
+import { validateSchedule } from "./validateSchedule.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -152,6 +153,30 @@ serve(async (req: Request) => {
     console.log(`Merged rules for ${mergedProviders.length} providers`);
 
     // -----------------------------------------------------------------------
+    // STEP 4.5 — VALIDATE SCHEDULE BEFORE PROCESSING
+    // -----------------------------------------------------------------------
+    const validation = validateSchedule(parsed, mergedProviders);
+    
+    if (!validation.valid) {
+      console.error("Validation failed:", validation.errors);
+      return new Response(
+        JSON.stringify({
+          error: "Schedule validation failed",
+          validation_errors: validation.errors,
+          validation_warnings: validation.warnings
+        }),
+        { 
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" }
+        }
+      );
+    }
+
+    if (validation.warnings.length > 0) {
+      console.log("Validation warnings:", validation.warnings);
+    }
+
+    // -----------------------------------------------------------------------
     // STEP 5 — CREATE SCHEDULER
     // -----------------------------------------------------------------------
     const scheduler = new HardScheduler();
@@ -198,7 +223,7 @@ serve(async (req: Request) => {
         schedule,
         providerTotals,
         payPeriodTotals,
-        warnings,
+        warnings: [...(validation.warnings || []), ...warnings],
         saved: !saveErr,
         saved_id: saved?.id
       }),
