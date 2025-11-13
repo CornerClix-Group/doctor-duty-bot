@@ -139,7 +139,7 @@ export const ScheduleUpload = ({ onScheduleLoad }: ScheduleUploadProps) => {
           onClick={handleDownloadTemplate}
           className="px-4 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700"
         >
-          Download Monthly Excel Template
+          Download Next Month Template
         </button>
       </div>
       
