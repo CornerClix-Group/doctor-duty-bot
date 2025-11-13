@@ -218,8 +218,31 @@ export class HardScheduler {
     this.computeTotals();
     this.checkTargetDeviations();
 
+    // Transform schedule object into array format expected by frontend
+    const scheduleArray = Object.keys(this.schedule).sort().map(date => {
+      const assignments = Object.entries(this.schedule[date])
+        .filter(([_, shift]) => shift && shift !== "OFF")
+        .map(([provider, shift]) => ({
+          shift: shift as string,
+          provider
+        }));
+      
+      // Calculate pay period (assuming 14-day cycles starting from a base date)
+      const dateObj = new Date(date);
+      const baseDate = new Date("2026-01-01");
+      const daysDiff = Math.floor((dateObj.getTime() - baseDate.getTime()) / (1000 * 60 * 60 * 24));
+      const pay_period = ((Math.floor(daysDiff / 14) + 4) % 14) + 1; // PP5 starts on Jan 1, 2026
+
+      return {
+        date,
+        pattern: this.coveragePattern[date] || 7,
+        pay_period,
+        assignments
+      };
+    });
+
     return {
-      schedule: this.schedule,
+      schedule: scheduleArray,
       providerTotals: this.providerTotals,
       payPeriodTotals: this.payPeriodTotals,
       warnings: this.warnings
