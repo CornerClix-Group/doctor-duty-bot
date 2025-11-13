@@ -50,18 +50,20 @@ async function getUserIdFromRequest(req: Request): Promise<string | null> {
 // ---------------------------------------------------------------------------
 // MERGE provider_profiles + provider_constraints INTO ONE RULESET
 // ---------------------------------------------------------------------------
-async function loadMergedProviders() {
-  const { data: profiles, error: pErr } = await supabaseAdmin
-    .from("provider_profiles")
-    .select("*");
+  async function loadMergedProviders() {
+    const { data: profiles, error: pErr } = await supabaseAdmin
+      .from("provider_profiles")
+      .select("*")
+      .eq("active", true)
+      .eq("role", "provider");
 
-  if (pErr) throw new Error("Failed to load provider_profiles");
+    if (pErr) throw new Error("Failed to load provider_profiles");
 
-  const { data: constraints, error: cErr } = await supabaseAdmin
-    .from("provider_constraints")
-    .select("*");
+    const { data: constraints, error: cErr } = await supabaseAdmin
+      .from("provider_constraints")
+      .select("*");
 
-  if (cErr) throw new Error("Failed to load provider_constraints");
+    if (cErr) throw new Error("Failed to load provider_constraints");
 
   const merged = profiles.map(profile => {
     const c = constraints.find(x => x.provider_id === profile.id);

@@ -141,7 +141,7 @@ export const ProviderDialog = ({ open, onOpenChange, provider, onSuccess }: Prov
       } else {
         const { error } = await supabase
           .from('provider_profiles')
-          .insert([data]);
+          .insert([{ ...data, active: true }]);
 
         if (error) throw error;
 

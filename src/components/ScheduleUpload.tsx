@@ -47,10 +47,12 @@ export const ScheduleUpload = ({ onScheduleLoad, selectedMonth: propMonth, selec
     async function loadProviders() {
       setLoadingProviders(true);
       try {
-        // Try provider_profiles first
+        // Try provider_profiles first (only active providers with role='provider')
         const { data: profiles, error: profilesError } = await supabase
           .from("provider_profiles")
           .select("id, first_name, last_name")
+          .eq("active", true)
+          .eq("role", "provider")
           .order('last_name');
 
         if (profilesError) {
