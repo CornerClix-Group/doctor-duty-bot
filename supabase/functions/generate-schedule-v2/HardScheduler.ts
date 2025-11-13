@@ -158,26 +158,66 @@ export class HardScheduler {
   }
 
   // --------------------------------------------------------------------------
-  // MAIN SOLVER - BACKTRACKING WITH TARGET ENFORCEMENT
+  // MAIN SOLVER - TARGET-AWARE GREEDY WITH MULTI-PASS
   // --------------------------------------------------------------------------
   solve() {
     // preload fixed assignments
     this.preloadAssignments();
 
-    // Count preassigned shifts for each provider
-    const currentCounts = this.getInitialCounts();
-    
-    // Build list of unfilled slots (date, slot_index)
-    const unfilledSlots = this.buildUnfilledSlots();
-    
-    // Attempt backtracking assignment
-    const success = this.backtrack(unfilledSlots, 0, currentCounts);
-    
-    if (!success) {
-      throw new Error("Cannot find valid assignment that meets all targets and coverage requirements");
+    const dates = Object.keys(this.schedule).sort();
+    const maxPasses = 3; // Limit passes to prevent infinite loops
+
+    // Run multiple passes to fill coverage while considering targets
+    for (let pass = 0; pass < maxPasses; pass++) {
+      let assignmentsMade = false;
+
+      for (const date of dates) {
+        let coverageNeeded = this.coveragePattern[date] || 0;
+        if (coverageNeeded <= 0) continue;
+
+        // Get providers sorted by priority (furthest below target = highest priority)
+        const eligibleProviders = this.getEligibleProvidersGreedy(date);
+
+        for (const providerInfo of eligibleProviders) {
+          if (coverageNeeded <= 0) break;
+
+          const { providerName, provider } = providerInfo;
+          const providerDay = this.getProviderDay(provider.name, date);
+
+          // Skip if already scheduled
+          if (this.schedule[date][providerName]) continue;
+
+          // Skip if OFF block
+          if (providerDay.assigned === "OFF") continue;
+
+          // Try to assign a shift
+          const assigned = this.tryAssignShift(providerName, provider, providerDay, date);
+          if (assigned) {
+            coverageNeeded--;
+            assignmentsMade = true;
+          }
+        }
+
+        // Update coverage pattern for next pass
+        this.coveragePattern[date] = coverageNeeded;
+      }
+
+      // If no assignments made in this pass, we're done
+      if (!assignmentsMade) break;
+    }
+
+    // Check if all coverage is met
+    for (const date of dates) {
+      if (this.coveragePattern[date] > 0) {
+        this.warnings.push(
+          `Unable to fill ${this.coveragePattern[date]} shifts on ${date}. Consider relaxing provider constraints.`
+        );
+      }
     }
 
     this.computeTotals();
+    this.checkTargetDeviations();
+
     return {
       schedule: this.schedule,
       providerTotals: this.providerTotals,
@@ -187,172 +227,27 @@ export class HardScheduler {
   }
 
   // --------------------------------------------------------------------------
-  // Get initial counts from preassigned shifts
+  // Try to assign a shift to provider on date
   // --------------------------------------------------------------------------
-  getInitialCounts(): Map<string, { worked: number; weekends: number }> {
-    const counts = new Map<string, { worked: number; weekends: number }>();
+  tryAssignShift(providerName: string, provider: any, providerDay: any, date: string): boolean {
     const WORK_SHIFTS = new Set(["D1","D2","MIDA","MIDB","E","N","FT W","FT W12","FT AM","FT PM"]);
     
-    // Initialize all providers from Excel
-    this.providerDays.forEach(p => {
-      counts.set(this.normalizeKey(p.name), { worked: 0, weekends: 0 });
-    });
+    // Get current counts for this provider
+    const currentCounts = this.getCurrentCounts(providerName);
+    const providerData = this.providerDays.find(p => 
+      this.normalizeKey(p.name) === this.normalizeKey(providerName)
+    );
+    const target = providerData?.target_shifts || 0;
+    const weekendQuota = providerData?.weekend_quota || 0;
+    const dow = new Date(date).getDay();
+    const isWeekend = dow === 0 || dow === 6;
 
-    // Count preassigned shifts
-    const dates = Object.keys(this.schedule).sort();
-    for (const date of dates) {
-      const dow = new Date(date).getDay();
-      const isWeekend = dow === 0 || dow === 6;
-      
-      for (const providerName in this.schedule[date]) {
-        const shift = this.schedule[date][providerName];
-        if (shift && shift !== "OFF" && WORK_SHIFTS.has(shift)) {
-          const key = this.normalizeKey(providerName);
-          const count = counts.get(key);
-          if (count) {
-            count.worked++;
-            if (isWeekend) count.weekends++;
-          }
-        }
-      }
-    }
-    
-    return counts;
-  }
-
-  // --------------------------------------------------------------------------
-  // Build list of unfilled coverage slots
-  // --------------------------------------------------------------------------
-  buildUnfilledSlots(): Array<{ date: string; remaining: number }> {
-    const slots: Array<{ date: string; remaining: number }> = [];
-    const dates = Object.keys(this.schedule).sort();
-    
-    for (const date of dates) {
-      const needed = this.coveragePattern[date] || 0;
-      if (needed > 0) {
-        slots.push({ date, remaining: needed });
-      }
-    }
-    
-    return slots;
-  }
-
-  // --------------------------------------------------------------------------
-  // Backtracking recursive solver
-  // --------------------------------------------------------------------------
-  backtrack(
-    slots: Array<{ date: string; remaining: number }>,
-    slotIndex: number,
-    currentCounts: Map<string, { worked: number; weekends: number }>
-  ): boolean {
-    // Base case: all slots filled
-    if (slotIndex >= slots.length) {
-      // Verify all targets met
-      return this.verifyTargetsMet(currentCounts);
+    // Don't overfill if already at or above target (unless needed for coverage)
+    if (currentCounts.worked >= target + 1) {
+      return false;
     }
 
-    const slot = slots[slotIndex];
-    const { date, remaining } = slot;
-
-    // If this date's coverage is fully met, move to next slot
-    if (remaining <= 0) {
-      return this.backtrack(slots, slotIndex + 1, currentCounts);
-    }
-
-    // Try assigning each eligible provider
-    const eligibleProviders = this.getEligibleProviders(date, currentCounts);
-    
-    for (const provider of eligibleProviders) {
-      const providerName = provider.excelName;
-      const providerData = provider.data;
-      
-      // Try each possible shift
-      const possibleShifts = this.getPossibleShifts(providerData, date, providerName);
-      
-      for (const shift of possibleShifts) {
-        // Make assignment
-        this.schedule[date][providerName] = shift;
-        
-        // Update counts
-        const key = this.normalizeKey(providerName);
-        const count = currentCounts.get(key)!;
-        const dow = new Date(date).getDay();
-        const isWeekend = dow === 0 || dow === 6;
-        const WORK_SHIFTS = new Set(["D1","D2","MIDA","MIDB","E","N","FT W","FT W12","FT AM","FT PM"]);
-        
-        if (WORK_SHIFTS.has(shift)) {
-          count.worked++;
-          if (isWeekend) count.weekends++;
-        }
-        
-        // Update slot remaining
-        slot.remaining--;
-        
-        // Recurse
-        const success = this.backtrack(slots, slotIndex, currentCounts);
-        
-        if (success) return true;
-        
-        // Backtrack: undo assignment
-        delete this.schedule[date][providerName];
-        if (WORK_SHIFTS.has(shift)) {
-          count.worked--;
-          if (isWeekend) count.weekends--;
-        }
-        slot.remaining++;
-      }
-    }
-
-    return false; // No valid assignment found
-  }
-
-  // --------------------------------------------------------------------------
-  // Get eligible providers for a date, sorted by priority
-  // --------------------------------------------------------------------------
-  getEligibleProviders(date: string, currentCounts: Map<string, { worked: number; weekends: number }>): Array<{ excelName: string; data: any; priority: number }> {
-    const eligible: Array<{ excelName: string; data: any; priority: number }> = [];
-    
-    for (const provider of this.providers) {
-      const providerDay = this.getProviderDay(provider.name, date);
-      const excelName = providerDay ? 
-        this.providerDays.find((p: any) => 
-          this.normalizeKey(p.name) === this.normalizeKey(provider.name)
-        )?.name || provider.name 
-        : provider.name;
-
-      // Skip if already scheduled
-      if (this.schedule[date][excelName]) continue;
-
-      // Skip if OFF block
-      if (providerDay.assigned === "OFF") continue;
-
-      // Check if provider can work on this date (has eligible shifts)
-      const possibleShifts = this.getPossibleShifts(provider, date, excelName);
-      if (possibleShifts.length === 0) continue;
-
-      // Calculate priority (providers below target get higher priority)
-      const excelProviderData = this.providerDays.find(p => this.normalizeKey(p.name) === this.normalizeKey(excelName));
-      const target = excelProviderData?.target_shifts || 0;
-      const weekendQuota = excelProviderData?.weekend_quota || 0;
-      const count = currentCounts.get(this.normalizeKey(excelName))!;
-      
-      // Priority: negative number = how far below target (higher = more priority)
-      const priority = (target - count.worked) * 10 + (weekendQuota - count.weekends);
-      
-      eligible.push({ excelName, data: provider, priority });
-    }
-
-    // Sort by priority (descending)
-    return eligible.sort((a, b) => b.priority - a.priority);
-  }
-
-  // --------------------------------------------------------------------------
-  // Get possible shifts for provider on date
-  // --------------------------------------------------------------------------
-  getPossibleShifts(provider: any, date: string, providerName: string): string[] {
-    const providerDay = this.getProviderDay(providerName, date);
-    const possible: string[] = [];
-
+    // Try each shift in priority order
     for (const shift of Array.from(SHIFT_CODES)) {
       // Check rest violations
       if (this.violatesRest(providerName, date, shift, provider)) continue;
@@ -360,28 +255,110 @@ export class HardScheduler {
       // Check eligibility
       if (!this.isShiftAllowed(provider, providerDay, shift, date)) continue;
 
-      possible.push(shift);
+      // If weekend and already at quota, skip (unless really needed)
+      if (isWeekend && WORK_SHIFTS.has(shift) && currentCounts.weekends >= weekendQuota + 1) {
+        continue;
+      }
+
+      // Assign the shift
+      this.schedule[date][providerName] = shift;
+      return true;
     }
 
-    return possible;
+    return false;
   }
 
   // --------------------------------------------------------------------------
-  // Verify all providers met their targets
+  // Get current shift counts for a provider
   // --------------------------------------------------------------------------
-  verifyTargetsMet(currentCounts: Map<string, { worked: number; weekends: number }>): boolean {
-    for (const providerData of this.providerDays) {
-      const key = this.normalizeKey(providerData.name);
-      const count = currentCounts.get(key)!;
-      const target = providerData.target_shifts || 0;
-      const weekendQuota = providerData.weekend_quota || 0;
+  getCurrentCounts(providerName: string): { worked: number; weekends: number } {
+    const WORK_SHIFTS = new Set(["D1","D2","MIDA","MIDB","E","N","FT W","FT W12","FT AM","FT PM"]);
+    const counts = { worked: 0, weekends: 0 };
+    const dates = Object.keys(this.schedule).sort();
 
-      // Allow ±1 tolerance for targets
-      if (Math.abs(count.worked - target) > 1) return false;
-      if (Math.abs(count.weekends - weekendQuota) > 1) return false;
+    for (const date of dates) {
+      const shift = this.schedule[date][providerName];
+      if (shift && shift !== "OFF" && WORK_SHIFTS.has(shift)) {
+        counts.worked++;
+        const dow = new Date(date).getDay();
+        if (dow === 0 || dow === 6) counts.weekends++;
+      }
     }
-    
-    return true;
+
+    return counts;
+  }
+
+  // --------------------------------------------------------------------------
+  // Get eligible providers sorted by priority
+  // --------------------------------------------------------------------------
+  getEligibleProvidersGreedy(date: string): Array<{ providerName: string; provider: any; priority: number }> {
+    const eligible: Array<{ providerName: string; provider: any; priority: number }> = [];
+
+    for (const provider of this.providers) {
+      const providerDay = this.getProviderDay(provider.name, date);
+      const providerName = providerDay ? 
+        this.providerDays.find((p: any) => 
+          this.normalizeKey(p.name) === this.normalizeKey(provider.name)
+        )?.name || provider.name 
+        : provider.name;
+
+      // Skip if already scheduled or OFF
+      if (this.schedule[date][providerName]) continue;
+      if (providerDay.assigned === "OFF") continue;
+
+      // Check if provider has any eligible shifts
+      let hasEligibleShift = false;
+      for (const shift of Array.from(SHIFT_CODES)) {
+        if (!this.violatesRest(providerName, date, shift, provider) &&
+            this.isShiftAllowed(provider, providerDay, shift, date)) {
+          hasEligibleShift = true;
+          break;
+        }
+      }
+      if (!hasEligibleShift) continue;
+
+      // Calculate priority based on distance from target
+      const currentCounts = this.getCurrentCounts(providerName);
+      const providerData = this.providerDays.find(p => 
+        this.normalizeKey(p.name) === this.normalizeKey(providerName)
+      );
+      const target = providerData?.target_shifts || 0;
+      const weekendQuota = providerData?.weekend_quota || 0;
+
+      // Higher priority = further below target
+      const priority = (target - currentCounts.worked) * 10 + (weekendQuota - currentCounts.weekends);
+
+      eligible.push({ providerName, provider, priority });
+    }
+
+    // Sort by priority descending
+    return eligible.sort((a, b) => b.priority - a.priority);
+  }
+
+  // --------------------------------------------------------------------------
+  // Check for target deviations and add warnings
+  // --------------------------------------------------------------------------
+  checkTargetDeviations() {
+    for (const providerData of this.providerDays) {
+      const name = providerData.name;
+      const totals = this.providerTotals[name];
+      if (!totals) continue;
+
+      const targetDiff = totals.worked - providerData.target_shifts;
+      const quotaDiff = totals.weekends - providerData.weekend_quota;
+
+      if (Math.abs(targetDiff) > 1) {
+        this.warnings.push(
+          `${name}: Assigned ${totals.worked} shifts vs target ${providerData.target_shifts} (${targetDiff > 0 ? '+' : ''}${targetDiff})`
+        );
+      }
+
+      if (Math.abs(quotaDiff) > 1) {
+        this.warnings.push(
+          `${name}: Assigned ${totals.weekends} weekend shifts vs quota ${providerData.weekend_quota} (${quotaDiff > 0 ? '+' : ''}${quotaDiff})`
+        );
+      }
+    }
   }
 
   // --------------------------------------------------------------------------
