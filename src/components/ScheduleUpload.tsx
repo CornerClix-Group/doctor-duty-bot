@@ -8,6 +8,19 @@ import { parseScheduleData } from '@/lib/scheduleParser';
 import { generateScheduleTemplate } from '@/lib/scheduleTemplateGenerator';
 import { supabase } from '@/integrations/supabase/client';
 
+function getNextMonthAndYear() {
+  const now = new Date();
+  let monthIndex = now.getMonth() + 1; // next month
+  let year = now.getFullYear();
+
+  if (monthIndex > 11) {
+    monthIndex = 0;
+    year += 1;
+  }
+
+  return { monthIndex, year };
+}
+
 interface ScheduleUploadProps {
   onScheduleLoad: (data: any) => void;
 }
@@ -84,11 +97,8 @@ export const ScheduleUpload = ({ onScheduleLoad }: ScheduleUploadProps) => {
         return;
       }
 
-      // Generate template for next month
-      const today = new Date();
-      const nextMonth = new Date(today.getFullYear(), today.getMonth() + 1, 1);
-      const monthIndex = nextMonth.getMonth();
-      const year = nextMonth.getFullYear();
+      // Get next month and year
+      const { monthIndex, year } = getNextMonthAndYear();
 
       // Generate workbook
       const wb = generateScheduleTemplate(monthIndex, year, providerNames);
