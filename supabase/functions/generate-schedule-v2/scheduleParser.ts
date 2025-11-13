@@ -4,7 +4,7 @@
 // OFF always allowed by default (Option 2), and zero formatting dependency.
 // ============================================================================
 
-import * as XLSX from "https://esm.sh/v135/xlsx@0.18.5";
+import * as XLSX from "https://esm.sh/xlsx@0.18.5";
 
 // ---------------------------------------------------------------------------
 // SHIFT DEFINITIONS
