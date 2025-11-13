@@ -161,8 +161,16 @@ serve(async (req) => {
     // -----------------------------------------------------------------------
     const scheduler = new HardScheduler();
     
+    // Filter mergedProfiles to only include providers in the Excel template
+    const excelProviderNames = new Set(
+      parsed.providers.map((p: any) => p.name.trim().toLowerCase())
+    );
+    const filteredProfiles = mergedProfiles.filter((p: any) => 
+      excelProviderNames.has(p.name.trim().toLowerCase())
+    );
+    
     scheduler.setCoveragePattern(parsed.coverage_pattern);
-    scheduler.loadProviders(mergedProfiles);
+    scheduler.loadProviders(filteredProfiles);
     scheduler.setProviderDays(parsed.providers);
     
     const generatedSchedule = scheduler.solve();
