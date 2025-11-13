@@ -10,18 +10,20 @@ import { useToast } from '@/hooks/use-toast';
 
 export interface Provider {
   id: string;
-  name: string;
-  email: string | null;
-  target_shifts: number;
-  weekend_quota: number;
-  phone: string | null;
-  notes: string | null;
-  active: boolean;
+  first_name: string;
+  last_name: string;
+  email: string;
+  role: string | null;
+  rest_hours: number | null;
+  n_recovery_days: number | null;
+  allowed_shifts: string[] | null;
+  preferred_shifts: string[] | null;
+  saturday_restrictions: string | null;
+  sunday_restrictions: string | null;
+  block_pattern: string | null;
   created_at: string;
   updated_at: string;
-  invitation_sent_at: string | null;
-  invitation_token: string | null;
-  invitation_accepted_at: string | null;
+  user_id: string | null;
 }
 
 const Providers = () => {
@@ -37,9 +39,9 @@ const Providers = () => {
     try {
       setLoading(true);
       const { data, error } = await supabase
-        .from('providers')
+        .from('provider_profiles')
         .select('*')
-        .order('name');
+        .order('last_name, first_name');
 
       if (error) throw error;
       setProviders(data || []);
@@ -75,7 +77,7 @@ const Providers = () => {
         body: {
           providerId: provider.id,
           email: provider.email,
-          name: provider.name,
+          name: `${provider.first_name} ${provider.last_name}`,
         },
       });
 
@@ -100,7 +102,7 @@ const Providers = () => {
   const handleDeleteProvider = async (id: string) => {
     try {
       const { error } = await supabase
-        .from('providers')
+        .from('provider_profiles')
         .delete()
         .eq('id', id);
 
@@ -123,8 +125,9 @@ const Providers = () => {
   };
 
   const filteredProviders = providers.filter(provider =>
-    provider.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    provider.email?.toLowerCase().includes(searchQuery.toLowerCase())
+    provider.first_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    provider.last_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    provider.email.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   return (
