@@ -77,6 +77,17 @@ export const ProviderDialog = ({ open, onOpenChange, provider, onSuccess }: Prov
     }));
   };
 
+  const selectAllShifts = (field: 'allowed_shifts' | 'preferred_shifts') => {
+    setFormData(prev => ({
+      ...prev,
+      [field]: AVAILABLE_SHIFTS
+    }));
+  };
+
+  const isAllShiftsSelected = (field: 'allowed_shifts' | 'preferred_shifts') => {
+    return formData[field].length === AVAILABLE_SHIFTS.length;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -237,7 +248,22 @@ export const ProviderDialog = ({ open, onOpenChange, provider, onSuccess }: Prov
             <TabsContent value="constraints" className="space-y-4 mt-4">
               <div className="space-y-3">
                 <Label>Allowed Shifts</Label>
-                <p className="text-sm text-muted-foreground">Select which shifts this provider can work</p>
+                <p className="text-sm text-muted-foreground">
+                  Click "All Shifts" to select all, or choose individual shifts
+                </p>
+                <div className="flex items-center gap-2 mb-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => selectAllShifts('allowed_shifts')}
+                  >
+                    All Shifts
+                  </Button>
+                  {isAllShiftsSelected('allowed_shifts') && (
+                    <span className="text-xs text-muted-foreground">All shifts selected</span>
+                  )}
+                </div>
                 <div className="flex flex-wrap gap-2">
                   {AVAILABLE_SHIFTS.map((shift) => (
                     <Badge

@@ -25,7 +25,7 @@ export const generateProviderCSVTemplate = () => {
       "provider",
       "12",
       "2",
-      "D1|D2|E|N",
+      "all",
       "D1|D2",
       "none",
       "none",
