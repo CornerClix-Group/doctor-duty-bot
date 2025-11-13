@@ -1,5 +1,27 @@
 import * as XLSX from 'xlsx';
 
+/**
+ * Safely extract the text value from a cell.
+ * Handles styled-but-empty cells, which SheetJS creates as objects with .s but no .v.
+ */
+function safeCellValue(cell: any): string {
+  if (!cell) return "";
+  if (cell.v === undefined || cell.v === null) return "";
+  return String(cell.v).trim();
+}
+
+/**
+ * Detects whether a given text value is a true shift assignment.
+ */
+const SHIFT_CODES = new Set([
+  "D1", "D2", "MIDA", "MIDB", "E", "N", "FT AM", "FT PM", "FT W", "FT W12", "C", "A10"
+]);
+
+/**
+ * True lock codes used in provider templates.
+ */
+const HARD_LOCKS = new Set(["X", "L", "LH", "HL"]);
+
 export interface Provider {
   name: string;
   weekendQuota: number;
@@ -66,8 +88,10 @@ function normalizeShiftName(text: string): string | null {
 
 // Parse constraint codes like "1/x", "5/10/x", "1/2/Amx"
 function parseConstraintCode(value: string): string[] | null {
+  if (!value) return null;
+  
   const lower = value.toLowerCase();
-  if (!lower.includes('/x') && !lower.includes('/X')) {
+  if (!lower.includes('/x')) {
     return null; // Not a constraint code
   }
   
@@ -75,13 +99,14 @@ function parseConstraintCode(value: string): string[] | null {
   const allowedShifts: string[] = [];
   
   parts.forEach(part => {
-    if (part === 'x') return; // Skip 'x' (means "or be off")
-    if (part === '1') allowedShifts.push('D1');
-    if (part === '2') allowedShifts.push('D2');
-    if (part === '5') allowedShifts.push('E');
-    if (part === '10' || part === '10p') allowedShifts.push('N');
-    if (part === 'am') allowedShifts.push('FT AM');
-    if (part === 'pm') allowedShifts.push('FT PM');
+    const p = part.replace(/x$/i, ''); // remove trailing x if present (e.g. "amx")
+    if (p === '' || p === 'x') return; // Skip 'x' (means "or be off")
+    if (p === '1') allowedShifts.push('D1');
+    else if (p === '2') allowedShifts.push('D2');
+    else if (p === '5') allowedShifts.push('E');
+    else if (p === '10' || p === '10p') allowedShifts.push('N');
+    else if (p === 'am') allowedShifts.push('FT AM');
+    else if (p === 'pm') allowedShifts.push('FT PM');
   });
   
   return allowedShifts.length > 0 ? allowedShifts : null;
@@ -241,40 +266,43 @@ export function parseScheduleData(worksheet: XLSX.WorkSheet): ScheduleData {
     // For each provider, check what they have on this day
     Object.keys(providers).forEach((providerName, providerIndex) => {
       const row = 4 + providerIndex; // Provider rows start at index 4
-      const cell = worksheet[XLSX.utils.encode_cell({ r: row, c: dateCol.col })];
+      const cellRef = XLSX.utils.encode_cell({ r: row, c: dateCol.col });
+      const cell = worksheet[cellRef];
       
-      if (cell?.v) {
-        const value = String(cell.v).trim();
-        const upperValue = value.toUpperCase();
-        
-        // Check for constraint codes (1/x, 5/10/x, etc.)
-        const constraintShifts = parseConstraintCode(value);
+      // Safely extract value
+      const rawValue = safeCellValue(cell);
+      const trimmed = rawValue.trim();
+      
+      if (!trimmed) return; // Empty cell - skip
+      
+      // Determine meaning
+      const isConstraint = parseConstraintCode(trimmed) !== null;
+      const isShift = SHIFT_CODES.has(trimmed);
+      const isHardLocked = HARD_LOCKS.has(trimmed.toUpperCase());
+      
+      // Handle constraint codes (1/x, 5/10/x, etc.)
+      if (isConstraint) {
+        const constraintShifts = parseConstraintCode(trimmed);
         if (constraintShifts) {
           providers[providerName].dailyConstraints[dateCol.date] = constraintShifts;
           providerBlocked[providerName].add(dateCol.date);
-          lockedCells[providerName][dateCol.date] = value;
-          return;
+          lockedCells[providerName][dateCol.date] = trimmed;
         }
-        
-        // Check if blocked (X, L, LH)
-        if (upperValue === 'X' || upperValue === 'L' || upperValue === 'LH' || upperValue === 'HL') {
-          const normalizedValue = upperValue === 'HL' ? 'LH' : upperValue;
-          providerBlocked[providerName].add(dateCol.date);
-          lockedCells[providerName][dateCol.date] = normalizedValue;
-          return;
-        }
-        
-        // Check for C or A10 shifts (special shifts that count towards PP but not targets)
-        if (upperValue === 'C' || upperValue === 'A10') {
-          providerBlocked[providerName].add(dateCol.date);
-          lockedCells[providerName][dateCol.date] = upperValue;
-          shifts[upperValue] = providerName; // Still track in shifts
-          return;
-        }
-        
-        // Check if it's an actual shift assignment
-        const normalized = normalizeShiftName(value);
-        if (normalized && normalized !== 'X' && normalized !== 'L' && normalized !== 'LH') {
+        return;
+      }
+      
+      // Handle hard lock codes (X, L, LH, HL)
+      if (isHardLocked) {
+        const normalizedValue = trimmed.toUpperCase() === 'HL' ? 'LH' : trimmed.toUpperCase();
+        providerBlocked[providerName].add(dateCol.date);
+        lockedCells[providerName][dateCol.date] = normalizedValue;
+        return;
+      }
+      
+      // Handle actual shift assignments
+      if (isShift) {
+        const normalized = normalizeShiftName(trimmed);
+        if (normalized) {
           shifts[normalized] = providerName;
           lockedCells[providerName][dateCol.date] = normalized; // Pre-assigned shifts are locked
         }
