@@ -79,6 +79,30 @@ function safeCellValue(cell: any): string {
   return String(cell.v).trim().toUpperCase();
 }
 
+/**
+ * Auto-corrects common typos in shift codes
+ */
+function autoCorrectTypos(value: string): string {
+  if (!value) return value;
+  
+  const upper = value.toUpperCase().trim();
+  
+  // Common typo corrections
+  const corrections: Record<string, string> = {
+    "A": "A10",
+    "AM": "FT AM",
+    "PM": "FT PM",
+    "MID": "MIDA",
+    "MID1": "MIDA",
+    "MID2": "MIDB",
+    "FTW": "FT W",
+    "FTAM": "FT AM",
+    "FTPM": "FT PM"
+  };
+  
+  return corrections[upper] || value;
+}
+
 // ---------------------------------------------------------------------------
 // MAIN PARSER FUNCTION
 // ---------------------------------------------------------------------------
@@ -188,7 +212,10 @@ export function parseSchedule(workbook: XLSX.WorkBook) {
       const date = days[i].date;
 
       const cellRef = XLSX.utils.encode_cell({ r: row, c: col });
-      const raw = safeCellValue(sheet[cellRef]);
+      let raw = safeCellValue(sheet[cellRef]);
+      
+      // Auto-correct common typos
+      raw = autoCorrectTypos(raw);
 
       let locked = false;
       let assigned: string | null = null;
