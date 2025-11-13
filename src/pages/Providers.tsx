@@ -1,12 +1,14 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Activity, ArrowLeft, Home, Plus, Search, Users as UsersIcon } from 'lucide-react';
+import { Activity, ArrowLeft, Home, Plus, Search, Users as UsersIcon, Download, Upload } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ProviderList } from '@/components/providers/ProviderList';
 import { ProviderDialog } from '@/components/providers/ProviderDialog';
+import { BulkImportDialog } from '@/components/providers/BulkImportDialog';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { generateProviderCSVTemplate } from '@/lib/csvTemplateGenerator';
 
 export interface Provider {
   id: string;
@@ -33,6 +35,7 @@ const Providers = () => {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isBulkImportOpen, setIsBulkImportOpen] = useState(false);
   const [selectedProvider, setSelectedProvider] = useState<Provider | null>(null);
 
   const fetchProviders = async () => {
@@ -178,10 +181,20 @@ const Providers = () => {
                 className="pl-10"
               />
             </div>
-            <Button onClick={handleAddProvider}>
-              <Plus className="mr-2 h-4 w-4" />
-              Add Provider
-            </Button>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={generateProviderCSVTemplate}>
+                <Download className="mr-2 h-4 w-4" />
+                Download Template
+              </Button>
+              <Button variant="outline" onClick={() => setIsBulkImportOpen(true)}>
+                <Upload className="mr-2 h-4 w-4" />
+                Bulk Import
+              </Button>
+              <Button onClick={handleAddProvider}>
+                <Plus className="mr-2 h-4 w-4" />
+                Add Provider
+              </Button>
+            </div>
           </div>
 
           {/* Provider List */}
@@ -202,6 +215,13 @@ const Providers = () => {
               fetchProviders();
               setIsDialogOpen(false);
             }}
+          />
+
+          {/* Bulk Import Dialog */}
+          <BulkImportDialog
+            open={isBulkImportOpen}
+            onOpenChange={setIsBulkImportOpen}
+            onSuccess={fetchProviders}
           />
         </div>
       </main>
