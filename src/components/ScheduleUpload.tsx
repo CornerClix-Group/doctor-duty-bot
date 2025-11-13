@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import * as XLSX from 'xlsx';
 import { parseScheduleData } from '@/lib/scheduleParser';
 import { generateScheduleTemplate } from '@/lib/scheduleTemplateGenerator';
+import { extractLastPPFromExcel } from '@/lib/extractPPFromExcel';
 import { supabase } from '@/integrations/supabase/client';
 
 function getNextMonthAndYear() {
@@ -32,6 +33,7 @@ export const ScheduleUpload = ({ onScheduleLoad, selectedMonth: propMonth, selec
   const [isDragging, setIsDragging] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
+  const [uploadedWorkbook, setUploadedWorkbook] = useState<XLSX.WorkBook | null>(null);
   const [providers, setProviders] = useState<any[]>([]);
   const [loadingProviders, setLoadingProviders] = useState(true);
   
@@ -109,6 +111,9 @@ export const ScheduleUpload = ({ onScheduleLoad, selectedMonth: propMonth, selec
         const wb = XLSX.read(bstr, { type: 'array' });
         const ws = wb.Sheets[wb.SheetNames[0]];
         
+        // Store workbook for PP extraction
+        setUploadedWorkbook(wb);
+        
         // Parse the schedule data
         const parsedData = parseScheduleData(ws);
         onScheduleLoad(parsedData);
@@ -149,6 +154,16 @@ export const ScheduleUpload = ({ onScheduleLoad, selectedMonth: propMonth, selec
       const monthIndex = selectedMonth - 1; // Convert 1-12 to 0-11
       const year = selectedYear;
 
+      // Determine starting PP from uploaded workbook (OPTION C)
+      let startingPP = 1;
+
+      if (uploadedWorkbook) {
+        const lastPP = extractLastPPFromExcel(uploadedWorkbook);
+        if (lastPP !== null) {
+          startingPP = lastPP === 14 ? 1 : lastPP + 1;
+        }
+      }
+
       const providerNames = providers.map((p) =>
         (p as any).name ? (p as any).name : `${p.first_name} ${p.last_name}`.trim()
       );
@@ -158,7 +173,7 @@ export const ScheduleUpload = ({ onScheduleLoad, selectedMonth: propMonth, selec
         return;
       }
 
-      const wb = generateScheduleTemplate(monthIndex, year, providerNames);
+      const wb = generateScheduleTemplate(monthIndex, year, providerNames, startingPP);
 
       const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
 
