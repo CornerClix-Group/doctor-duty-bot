@@ -194,9 +194,22 @@ serve(async (req) => {
     // -----------------------------------------------------------------------
     // RETURN RESULT
     // -----------------------------------------------------------------------
+    // Transform schedule object to array format for frontend
+    const scheduleArray = Object.keys(generatedSchedule.schedule).sort().map(date => {
+      const assignments = Object.entries(generatedSchedule.schedule[date])
+        .filter(([_, shift]) => shift && shift !== "OFF")
+        .map(([provider, shift]) => ({ shift: shift as string, provider }));
+      
+      return {
+        date,
+        pattern: parsed.coverage_pattern[date] || 7,
+        assignments
+      };
+    });
+
     return successResponse({
       message: "Schedule generated successfully",
-      schedule: generatedSchedule.schedule,
+      schedule: scheduleArray,
       provider_totals: generatedSchedule.providerTotals,
       pay_period_totals: generatedSchedule.payPeriodTotals,
       warnings: validation.warnings ?? []
