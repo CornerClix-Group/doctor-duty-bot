@@ -48,8 +48,8 @@ export const ScheduleUpload = ({ onScheduleLoad, selectedMonth: propMonth, selec
       setLoadingProviders(true);
       try {
         // Try provider_profiles first (only active providers with role='provider')
-        const { data: profiles, error: profilesError } = await supabase
-          .from("provider_profiles")
+        const { data: profiles, error: profilesError } = await (supabase
+          .from("provider_profiles") as any)
           .select("id, first_name, last_name")
           .eq("active", true)
           .eq("role", "provider")

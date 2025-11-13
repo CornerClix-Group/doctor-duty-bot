@@ -35,7 +35,7 @@ export const ProviderList = ({ providers, loading, onEdit, onDelete, onSendInvit
     try {
       const { error } = await supabase
         .from('provider_profiles')
-        .update({ active: checked })
+        .update({ active: checked } as any)
         .eq('id', provider.id);
 
       if (error) throw error;
