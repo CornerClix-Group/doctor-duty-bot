@@ -125,14 +125,13 @@ export const ScheduleUpload = ({ onScheduleLoad }: ScheduleUploadProps) => {
   return (
     <div className="space-y-4">
       <div className="flex justify-end mb-4">
-        <Button 
-          variant="outline" 
-          onClick={handleDownloadTemplate}
+        <button
           type="button"
+          onClick={handleDownloadTemplate}
+          className="px-4 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700"
         >
-          <Download className="mr-2 h-4 w-4" />
-          Download Template
-        </Button>
+          Download Monthly Excel Template
+        </button>
       </div>
       
       <Card
