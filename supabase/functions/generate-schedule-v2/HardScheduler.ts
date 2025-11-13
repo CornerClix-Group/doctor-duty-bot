@@ -175,9 +175,15 @@ export class HardScheduler {
         if (coverageNeeded <= 0) break;
 
         const providerDay = this.getProviderDay(provider.name, date);
+        // Use the name from providerDay (Excel) for consistency
+        const providerName = providerDay ? 
+          this.providerDays.find((p: any) => 
+            p.name.trim().toLowerCase() === provider.name.trim().toLowerCase()
+          )?.name || provider.name 
+          : provider.name;
 
         // Already scheduled due to preassignment?
-        if (this.schedule[date][provider.name]) continue;
+        if (this.schedule[date][providerName]) continue;
 
         // OFF block?
         if (providerDay.assigned === "OFF") continue;
@@ -185,7 +191,7 @@ export class HardScheduler {
         // Try assigning each shift
         for (let shift of SHIFT_CODES) {
           // rest-hour check
-          if (this.violatesRest(provider.name, date, shift, provider))
+          if (this.violatesRest(providerName, date, shift, provider))
             continue;
 
           // rule/constraint eligibility
@@ -193,7 +199,7 @@ export class HardScheduler {
             continue;
 
           // assign
-          this.schedule[date][provider.name] = shift;
+          this.schedule[date][providerName] = shift;
           coverageNeeded -= 1;
           break;
         }
@@ -220,7 +226,9 @@ export class HardScheduler {
   // UTILITY: find the providerDay entry
   // --------------------------------------------------------------------------
   getProviderDay(providerName: string, date: string) {
-    const provider = this.providerDays.find((p: any) => p.name === providerName);
+    const provider = this.providerDays.find((p: any) => 
+      p.name.trim().toLowerCase() === providerName.trim().toLowerCase()
+    );
     if (!provider) throw new Error(`Provider ${providerName} missing in parser output.`);
 
     const day = provider.days.find((d: any) => d.date === date);
@@ -233,13 +241,18 @@ export class HardScheduler {
   // COMPUTE TOTALS (per provider + per pay period)
   // --------------------------------------------------------------------------
   computeTotals() {
-    const providers = this.providers.map(p => p.name);
-
-    providers.forEach(name => {
-      this.providerTotals[name] = 0;
+    // Initialize totals using provider names from schedule (Excel format)
+    const dates = Object.keys(this.schedule).sort();
+    
+    // Collect all unique provider names from the schedule
+    const scheduleProviderNames = new Set<string>();
+    dates.forEach(date => {
+      Object.keys(this.schedule[date]).forEach(name => scheduleProviderNames.add(name));
     });
 
-    const dates = Object.keys(this.schedule).sort();
+    scheduleProviderNames.forEach(name => {
+      this.providerTotals[name] = 0;
+    });
 
     let ppCounter = 1;
     for (let date of dates) {
