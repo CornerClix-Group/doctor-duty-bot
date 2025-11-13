@@ -109,13 +109,17 @@ export const ScheduleUpload = ({ onScheduleLoad, selectedMonth: propMonth, selec
     reader.onload = (evt) => {
       try {
         const bstr = evt.target?.result as ArrayBuffer;
+        console.log('File read successfully, size:', bstr.byteLength);
+        
         const workbook = XLSX.read(bstr, { type: 'array', cellStyles: true });
+        console.log('Workbook created, sheets:', workbook.SheetNames);
         
         // Store workbook for PP extraction
         setUploadedWorkbook(workbook);
         
         // Parse the schedule data using new parser
         const scheduleData = parseSchedule(workbook);
+        console.log('Schedule data parsed successfully');
         
         // Convert to base64 for edge function
         const base64 = btoa(
@@ -125,7 +129,8 @@ export const ScheduleUpload = ({ onScheduleLoad, selectedMonth: propMonth, selec
         onScheduleLoad(scheduleData, base64);
         setUploadedFileName(file.name);
       } catch (err) {
-        setError('Failed to parse Excel file. Please check the format.');
+        const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+        setError(`Failed to parse Excel file: ${errorMessage}`);
         console.error('Parse error:', err);
       }
     };
