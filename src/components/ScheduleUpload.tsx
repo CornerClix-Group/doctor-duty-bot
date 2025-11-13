@@ -8,6 +8,7 @@ import * as XLSX from 'xlsx';
 import { parseScheduleData } from '@/lib/scheduleParser';
 import { generateScheduleTemplate } from '@/lib/scheduleTemplateGenerator';
 import { extractLastPPFromExcel, extractLastPPBlockIndex } from '@/lib/extractPPFromExcel';
+import { generateScheduleTemplateBuffer } from '@/lib/scheduleTemplateGeneratorExcel';
 import { supabase } from '@/integrations/supabase/client';
 
 function getNextMonthAndYear() {
@@ -188,16 +189,21 @@ export const ScheduleUpload = ({ onScheduleLoad, selectedMonth: propMonth, selec
         return;
       }
 
-      const wb = generateScheduleTemplate(monthIndex, year, providerNames, startingPP, startingBlockIndex);
-
-      const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array', cellStyles: true });
+      // Use ExcelJS to generate styled template buffer
+      const buffer = await generateScheduleTemplateBuffer(
+        monthIndex,
+        year,
+        providerNames,
+        startingPP,
+        startingBlockIndex
+      );
 
       const monthName = new Date(year, monthIndex, 1).toLocaleString('default', {
         month: 'long',
       });
       const filename = `ScheduleTemplate-${monthName}-${year}.xlsx`;
 
-      const blob = new Blob([wbout], {
+      const blob = new Blob([buffer], {
         type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       });
 
