@@ -73,7 +73,7 @@ const Schedule = () => {
       );
 
       // 1. Create clean template
-      const templateWb = generateScheduleTemplate(monthIndex, year, providerNames);
+      const templateWb = generateScheduleTemplate(monthIndex, year, providerNames, 1, 0);
 
       // 2. Export filled schedule
       const filledWb = exportFinalScheduleToExcel(

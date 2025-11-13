@@ -198,7 +198,9 @@ export const SchedulingEngine = ({ scheduleData, onScheduleGenerated }: Scheduli
       const wb = generateScheduleTemplate(
         monthIndex,
         year,
-        providerNames
+        providerNames,
+        1, // startingPP
+        0  // startingBlockIndex
       );
 
       // 2. Export filled schedule into that workbook

@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import * as XLSX from 'xlsx';
 import { parseScheduleData } from '@/lib/scheduleParser';
 import { generateScheduleTemplate } from '@/lib/scheduleTemplateGenerator';
-import { extractLastPPFromExcel } from '@/lib/extractPPFromExcel';
+import { extractLastPPFromExcel, extractLastPPBlockIndex } from '@/lib/extractPPFromExcel';
 import { supabase } from '@/integrations/supabase/client';
 
 function getNextMonthAndYear() {
@@ -156,16 +156,26 @@ export const ScheduleUpload = ({ onScheduleLoad, selectedMonth: propMonth, selec
 
       // Determine starting PP from uploaded workbook (OPTION C)
       let startingPP = 1;
+      let startingBlockIndex = 0;
 
       if (uploadedWorkbook) {
         const lastPP = extractLastPPFromExcel(uploadedWorkbook);
         if (lastPP !== null) {
           startingPP = lastPP === 14 ? 1 : lastPP + 1;
         }
+        
+        // Extract block color to continue pattern
+        startingBlockIndex = extractLastPPBlockIndex(uploadedWorkbook);
+        
+        // If PP wrapped from 14 to 1, advance block index
+        if (lastPP === 14) {
+          startingBlockIndex = (startingBlockIndex + 1) % 3;
+        }
       } else {
         // SPECIAL CASE: January 2026 must start at PP5
         if (selectedMonth === 1 && selectedYear === 2026) {
           startingPP = 5;
+          startingBlockIndex = 1; // Blue block for Jan 2026
         }
       }
 
@@ -178,7 +188,7 @@ export const ScheduleUpload = ({ onScheduleLoad, selectedMonth: propMonth, selec
         return;
       }
 
-      const wb = generateScheduleTemplate(monthIndex, year, providerNames, startingPP);
+      const wb = generateScheduleTemplate(monthIndex, year, providerNames, startingPP, startingBlockIndex);
 
       const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
 
