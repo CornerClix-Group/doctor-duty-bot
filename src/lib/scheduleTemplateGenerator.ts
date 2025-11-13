@@ -1,26 +1,23 @@
 import * as XLSX from "xlsx";
 
-//
-// CONFIG:
-// Anchor: Jan 1, 2026 = PP5
-//
-const ANCHOR_DATE = new Date(2026, 0, 1); // Jan 1, 2026
-const ANCHOR_PP = 5; // PP5 on Jan 1, 2026
-
-//
-// Compute PP1–PP14 repeating windows
-//
-function computePP(date: Date): number {
-  const MS_DAY = 1000 * 60 * 60 * 24;
-  const diffDays = Math.floor((date.getTime() - ANCHOR_DATE.getTime()) / MS_DAY);
-
-  const raw = ((diffDays + (ANCHOR_PP - 1)) % 14);
-  return raw >= 0 ? raw + 1 : ((raw + 14) % 14) + 1;
+/**
+ * Compute PP number for a given day offset inside the month.
+ * PP cycles 1→14 then wraps.
+ *
+ * Example:
+ *   startingPP = 8
+ *   first day = PP8
+ *   second day = PP9
+ *   ...
+ *   PP14 -> PP1 -> PP2 -> ...
+ */
+function computePPForDay(startingPP: number, dayIndex: number): number {
+  return ((startingPP - 1 + dayIndex) % 14) + 1;
 }
 
-//
-// PP Color map
-//
+/**
+ * PP Color map
+ */
 function ppColor(pp: number): string {
   if (pp >= 1 && pp <= 4) return "blue";
   if (pp >= 5 && pp <= 9) return "yellow";
@@ -28,27 +25,27 @@ function ppColor(pp: number): string {
   return "";
 }
 
-//
-// Generate Template with PP1..PP14 repeating, color coded
-//
+/**
+ * Generate the schedule template with PP1–PP14 repeating.
+ * startingPP is the PP number of the FIRST day of the month.
+ */
 export function generateScheduleTemplate(
   monthIndex: number,
   year: number,
-  providerNames: string[]
+  providerNames: string[],
+  startingPP: number = 1
 ): XLSX.WorkBook {
   const monthName = new Date(year, monthIndex, 1).toLocaleString("default", {
     month: "long",
   });
 
   const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
-
   const data: any[][] = [];
 
-  // Row 1
-  const row1 = [`${monthName} ${year}`, ""];
-  for (let d = 1; d <= daysInMonth; d++) {
-    const date = new Date(year, monthIndex, d);
-    const pp = computePP(date);
+  // Row 1: Month + PP headers
+  const row1: any[] = [`${monthName} ${year}`, ""];
+  for (let d = 0; d < daysInMonth; d++) {
+    const pp = computePPForDay(startingPP, d);
     row1.push(`PP${pp}`);
   }
   row1.push("");
@@ -61,8 +58,8 @@ export function generateScheduleTemplate(
   data.push(row2);
 
   // Row 3 (Day)
-  const row3 = ["Day", ""];
-  const dayAbbr = ["Su","Mo","Tu","We","Th","Fr","Sa"];
+  const row3: any[] = ["Day", ""];
+  const dayAbbr = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
   for (let d = 1; d <= daysInMonth; d++) {
     const dow = new Date(year, monthIndex, d).getDay();
     row3.push(dayAbbr[dow]);
@@ -78,7 +75,7 @@ export function generateScheduleTemplate(
 
   // Provider rows
   providerNames.forEach((name) => {
-    const row = [name, 0];
+    const row: any[] = [name, 0];
     for (let d = 1; d <= daysInMonth; d++) row.push("");
     row.push(0);
     data.push(row);
