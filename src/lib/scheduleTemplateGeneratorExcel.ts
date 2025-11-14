@@ -35,7 +35,7 @@ export async function generateScheduleTemplateBuffer(
   const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
 
   // Build headers and rows
-  const row1: any[] = [`${monthName} ${year}`, ''];
+  const row1: any[] = [`${monthName} ${year}`, '', ''];
   const blockColors: string[] = [];
   let blockIdx = startingBlockIndex;
   for (let d = 1; d <= daysInMonth; d++) {
@@ -48,7 +48,7 @@ export async function generateScheduleTemplateBuffer(
   ws.addRow(row1);
 
   // Row 2: Coverage # (DEFAULT values - fully editable by user)
-  const row2: any[] = ['Coverage #', ''];
+  const row2: any[] = ['Coverage #', '', ''];
   for (let d = 1; d <= daysInMonth; d++) {
     const dow = new Date(year, monthIndex, d).getDay(); // 0=Sun, 6=Sat
     // DEFAULT values: Sundays & Saturdays → 7, Weekdays → 8
@@ -59,7 +59,7 @@ export async function generateScheduleTemplateBuffer(
   ws.addRow(row2);
 
   const dayAbbr = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
-  const row3: any[] = ['Day', ''];
+  const row3: any[] = ['Day', '', ''];
   const weekendFlags: ('sun' | 'sat' | '')[] = [];
   for (let d = 1; d <= daysInMonth; d++) {
     const dow = new Date(year, monthIndex, d).getDay();
@@ -69,30 +69,31 @@ export async function generateScheduleTemplateBuffer(
   row3.push('');
   ws.addRow(row3);
 
-  const row4: any[] = ['Date', ''];
+  const row4: any[] = ['Date', '', ''];
   for (let d = 1; d <= daysInMonth; d++) row4.push(d);
   row4.push('');
   ws.addRow(row4);
 
   providerNames.forEach((name) => {
-    const row: any[] = [name, 0];
+    const row: any[] = [name, 0, 0]; // name, weekend_quota, night_quota
     for (let d = 1; d <= daysInMonth; d++) row.push('');
-    row.push(0);
+    row.push(0); // total
     ws.addRow(row);
   });
 
   // Set column widths
   ws.getColumn(1).width = 20; // Provider name column
   ws.getColumn(2).width = 10; // Weekend quota column
-  for (let c = 3; c <= 2 + daysInMonth; c++) {
+  ws.getColumn(3).width = 10; // Night quota column
+  for (let c = 4; c <= 3 + daysInMonth; c++) {
     ws.getColumn(c).width = 6; // Day columns
   }
-  ws.getColumn(3 + daysInMonth).width = 10; // Total column
+  ws.getColumn(4 + daysInMonth).width = 10; // Total column
 
-  // Apply PP block colors (Row 1, columns C onwards)
+  // Apply PP block colors (Row 1, columns D onwards)
   for (let c = 0; c < daysInMonth; c++) {
     const color = toARGB(blockColors[c]);
-    const cell = ws.getCell(1, c + 3); // Column C is index 3
+    const cell = ws.getCell(1, c + 4); // Column D is index 4
     cell.fill = {
       type: 'pattern',
       pattern: 'solid',
@@ -107,7 +108,7 @@ export async function generateScheduleTemplateBuffer(
     const flag = weekendFlags[d];
     if (!flag) continue;
     const bg = toARGB(flag === 'sun' ? SUN_COLOR : SAT_COLOR);
-    const col = d + 3; // Column C is index 3
+    const col = d + 4; // Column D is index 4
     for (let r = 2; r <= lastRow; r++) {
       const cell = ws.getCell(r, col);
       cell.fill = {

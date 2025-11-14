@@ -169,7 +169,7 @@ export function parseSchedule(workbook: XLSX.WorkBook, providerProfiles?: any[])
   const coverage_pattern: Record<string, number> = {};
   const days: Array<{ date: string, pattern: number }> = [];
 
-  for (let col = 2; col < 2 + daysInMonth; col++) {
+  for (let col = 3; col < 3 + daysInMonth; col++) {
     const dateCell = safeCellValue(sheet[XLSX.utils.encode_cell({ r: 3, c: col })]);
     if (!dateCell) continue;
 
@@ -211,7 +211,7 @@ export function parseSchedule(workbook: XLSX.WorkBook, providerProfiles?: any[])
     // Parse daily cells
     // --------------------------------------
     for (let i = 0; i < days.length; i++) {
-      const col = 2 + i;
+      const col = 3 + i;
       const date = days[i].date;
 
       const cellRef = XLSX.utils.encode_cell({ r: row, c: col });
