@@ -23,6 +23,9 @@ export class HardScheduler {
   providerTotals: Record<string, { worked: number; weekends: number; target: number; weekend_quota: number }> = {};
   payPeriodTotals: Record<number, number> = {};
   warnings: string[] = [];
+  
+  // Night block recovery tracking
+  recoveryWindows: Map<string, Set<string>> = new Map(); // providerName -> Set of dates in recovery
 
   constructor() {}
 
@@ -158,13 +161,93 @@ export class HardScheduler {
   }
 
   // --------------------------------------------------------------------------
+  // NIGHT BLOCK RECOVERY HELPERS
+  // --------------------------------------------------------------------------
+  
+  isNight(shift: string | null | undefined): boolean {
+    return shift === "N";
+  }
+
+  wasNightYesterday(providerName: string, date: string): boolean {
+    const prevDate = this.getPreviousDate(date);
+    if (!prevDate) return false;
+    const prevShift = this.schedule[prevDate]?.[providerName];
+    return this.isNight(prevShift);
+  }
+
+  isBlockEnding(providerName: string, date: string, currentShift: string): boolean {
+    // Block ends when:
+    // - Yesterday was N
+    // - Today is NOT N
+    const yesterday = this.getPreviousDate(date);
+    if (!yesterday) return false;
+    
+    const yesterdayShift = this.schedule[yesterday]?.[providerName];
+    return this.isNight(yesterdayShift) && !this.isNight(currentShift);
+  }
+
+  getRequiredRecoveryDays(providerName: string): number {
+    // David Coffin requires 4 days, others require 2
+    return providerName === "David Coffin" ? 4 : 2;
+  }
+
+  enforcePostNightBlockRecovery(providerName: string, blockEndDate: string) {
+    const recoveryDays = this.getRequiredRecoveryDays(providerName);
+    const dates = Object.keys(this.schedule).sort();
+    const endIndex = dates.indexOf(blockEndDate);
+    
+    if (endIndex === -1) return;
+
+    // Initialize recovery set for this provider
+    if (!this.recoveryWindows.has(providerName)) {
+      this.recoveryWindows.set(providerName, new Set());
+    }
+    const recoverySet = this.recoveryWindows.get(providerName)!;
+
+    // Mark next recoveryDays as recovery period
+    for (let i = 1; i <= recoveryDays && endIndex + i < dates.length; i++) {
+      recoverySet.add(dates[endIndex + i]);
+    }
+  }
+
+  isInRecoveryWindow(providerName: string, date: string): boolean {
+    const recoverySet = this.recoveryWindows.get(providerName);
+    return recoverySet ? recoverySet.has(date) : false;
+  }
+
+  isDateLocked(providerName: string, date: string): boolean {
+    const providerDay = this.providerDays.find((p: any) => 
+      this.normalizeKey(p.name) === this.normalizeKey(providerName)
+    );
+    if (!providerDay) return false;
+
+    const day = providerDay.days.find((d: any) => d.date === date);
+    return day?.locked === true;
+  }
+
+  // --------------------------------------------------------------------------
   // MAIN SOLVER - TARGET-AWARE GREEDY WITH MULTI-PASS
   // --------------------------------------------------------------------------
   solve() {
     // preload fixed assignments
     this.preloadAssignments();
-
+    
+    // Scan preassigned shifts to detect and enforce existing night block recoveries
     const dates = Object.keys(this.schedule).sort();
+    for (const providerData of this.providerDays) {
+      const providerName = providerData.name;
+      
+      for (let i = 0; i < dates.length; i++) {
+        const date = dates[i];
+        const shift = this.schedule[date]?.[providerName];
+        
+        // Check if a night block is ending
+        if (shift && !this.isNight(shift) && this.wasNightYesterday(providerName, date)) {
+          this.enforcePostNightBlockRecovery(providerName, date);
+        }
+      }
+    }
+
     const maxPasses = 3; // Limit passes to prevent infinite loops
 
     // Run multiple passes to fill coverage while considering targets
@@ -181,8 +264,14 @@ export class HardScheduler {
         for (const providerInfo of eligibleProviders) {
           if (coverageNeeded <= 0) break;
 
-          const { providerName, provider } = providerInfo;
-          const providerDay = this.getProviderDay(provider.name, date);
+      const { providerName, provider } = providerInfo;
+      
+      // Check if in recovery window (unless date is locked)
+      if (this.isInRecoveryWindow(providerName, date) && !this.isDateLocked(providerName, date)) {
+        continue;
+      }
+      
+      const providerDay = this.getProviderDay(provider.name, date);
 
           // Skip if already scheduled
           if (this.schedule[date][providerName]) continue;
@@ -255,6 +344,11 @@ export class HardScheduler {
   tryAssignShift(providerName: string, provider: any, providerDay: any, date: string): boolean {
     const WORK_SHIFTS = new Set(["D1","D2","MIDA","MIDB","E","N","FT W","FT W12","FT AM","FT PM"]);
     
+    // Check if in recovery window (unless date is locked)
+    if (this.isInRecoveryWindow(providerName, date) && !this.isDateLocked(providerName, date)) {
+      return false;
+    }
+    
     // Get current counts for this provider
     const currentCounts = this.getCurrentCounts(providerName);
     const providerData = this.providerDays.find(p => 
@@ -285,6 +379,15 @@ export class HardScheduler {
 
       // Assign the shift
       this.schedule[date][providerName] = shift;
+      
+      // Track night blocks and enforce recovery
+      if (this.isNight(shift)) {
+        // Provider assigned a night shift - track but don't enforce recovery yet
+      } else if (this.wasNightYesterday(providerName, date)) {
+        // Block is ending - enforce recovery starting AFTER this date
+        this.enforcePostNightBlockRecovery(providerName, date);
+      }
+      
       return true;
     }
 
