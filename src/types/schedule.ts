@@ -1,3 +1,24 @@
+export interface ProviderDay {
+  date: string;
+  locked: boolean;
+  value: string;
+}
+
+export interface ParsedProvider {
+  name: string;
+  weekend_quota: number;
+  night_quota: number;
+  total_shifts: number;
+  days: ProviderDay[];
+}
+
+export interface ParsedSchedule {
+  month: string;
+  year: number;
+  coverage_pattern: { [date: string]: number };
+  providers: ParsedProvider[];
+}
+
 export interface ProviderProfile {
   first_name: string;
   last_name: string;
@@ -26,9 +47,9 @@ export interface MonthlyInput {
 }
 
 export interface DailyAssignment {
-  date: string;      // "2026-01-05"
-  shift: string;     // "D1"
-  provider: string;  // "Lopez"
+  date: string;
+  shift: string;
+  provider: string;
 }
 
 export interface ProviderTotal {
@@ -40,7 +61,12 @@ export interface ProviderTotal {
 export interface GeneratedSchedule {
   month: string;
   year: number;
-  schedule: {
+  assignments?: {
+    [date: string]: {
+      [shift: string]: string;
+    };
+  };
+  schedule?: {
     date: string;
     pattern: number;
     pay_period: number;
