@@ -5,10 +5,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
-import { Loader2, Sparkles, Calendar, Download, Trash2, ArrowLeft } from 'lucide-react';
+import { Loader2, Sparkles, Calendar, Download, Trash2, ArrowLeft, FileSpreadsheet } from 'lucide-react';
 import { ScheduleUpload } from '@/components/ScheduleUpload';
 import { ScheduleCalendar } from '@/components/ScheduleCalendar';
 import { ProviderStats } from '@/components/ProviderStats';
+import { exportScheduleToExcel } from '@/lib/scheduleExporterExcel';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -161,6 +162,46 @@ export default function GenerateSchedule() {
     });
   };
 
+  const handleExportExcel = async () => {
+    try {
+      if (!generatedSchedule) return;
+
+      // Normalize schedule format
+      const scheduleArray = generatedSchedule.schedule || [];
+
+      const buffer = await exportScheduleToExcel(
+        scheduleArray,
+        month,
+        year,
+        generatedSchedule.provider_totals,
+        uploadedData?.coverage_pattern
+      );
+
+      // Download file
+      const blob = new Blob([buffer], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `Schedule_${month}_${year}.xlsx`;
+      link.click();
+      URL.revokeObjectURL(url);
+
+      toast({
+        title: 'Export Successful',
+        description: 'Schedule exported to Excel format',
+      });
+    } catch (error: any) {
+      console.error('Error exporting schedule:', error);
+      toast({
+        title: 'Export Failed',
+        description: error.message,
+        variant: 'destructive',
+      });
+    }
+  };
+
   return (
     <div className="min-h-screen bg-background p-6">
       <div className="max-w-6xl mx-auto space-y-6">
@@ -310,12 +351,21 @@ export default function GenerateSchedule() {
           {generatedSchedule && (
             <>
               <Button
+                onClick={handleExportExcel}
+                variant="default"
+                size="lg"
+              >
+                <FileSpreadsheet className="mr-2 h-5 w-5" />
+                Export to Excel
+              </Button>
+
+              <Button
                 onClick={handleSaveSchedule}
                 variant="secondary"
                 size="lg"
               >
                 <Download className="mr-2 h-5 w-5" />
-                Save Schedule
+                Save to Database
               </Button>
               
               <AlertDialog>
