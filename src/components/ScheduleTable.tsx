@@ -98,14 +98,23 @@ export const ScheduleTable = ({ schedule, month }: ScheduleTableProps) => {
               <div className="space-y-2">
                 {day.assignments
                   .sort((a, b) => {
-                    // Define shift order: Night first, then FT shifts, then others, then admin
-                    const getOrder = (shift: string) => {
-                      if (shift === 'N') return 0;
-                      if (shift.startsWith('FT')) return 1;
-                      if (shift === 'ADMIN' || shift === 'CALL') return 3;
-                      return 2;
+                    // Define shift order: D1, D2, MIDA, MIDB, E, then N, then FT, then admin
+                    const shiftOrder: { [key: string]: number } = {
+                      'D1': 0,
+                      'D2': 1,
+                      'MIDA': 2,
+                      'MIDB': 3,
+                      'E': 4,
+                      'N': 5,
+                      'FT AM': 6,
+                      'FT PM': 7,
+                      'FT W': 8,
+                      'ADMIN': 9,
+                      'CALL': 10
                     };
-                    return getOrder(a.shift) - getOrder(b.shift);
+                    const orderA = shiftOrder[a.shift] ?? 99;
+                    const orderB = shiftOrder[b.shift] ?? 99;
+                    return orderA - orderB;
                   })
                   .map((assignment, aIdx) => (
                   <div 
