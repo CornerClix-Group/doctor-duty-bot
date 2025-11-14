@@ -214,9 +214,15 @@ export class HardScheduler {
     }
     const recoverySet = this.recoveryWindows.get(providerName)!;
 
-    // Mark next recoveryDays as recovery period
+    // Mark next recoveryDays as recovery period, and explicitly set OFF unless locked
     for (let i = 1; i <= recoveryDays && endIndex + i < dates.length; i++) {
-      recoverySet.add(dates[endIndex + i]);
+      const recDate = dates[endIndex + i];
+      recoverySet.add(recDate);
+
+      // If not locked and not already assigned, force OFF for recovery
+      if (!this.isDateLocked(providerName, recDate) && !this.schedule[recDate][providerName]) {
+        this.schedule[recDate][providerName] = "OFF";
+      }
     }
   }
 
@@ -270,12 +276,27 @@ export class HardScheduler {
     // If already at 4 nights, can't add more
     if (nightsBefore >= 4) return false;
 
-    // If this would be the 3rd or 4th night, allow
-    if (nightsBefore === 2 || nightsBefore === 3) return true;
+    // Look ahead to see how many consecutive nights are feasible after this date
+    const provider = this.providers.find(p => this.normalizeKey(p.name) === this.normalizeKey(providerName));
+    if (!provider) return false;
 
-    // If starting a new block (0 nights before) or 1 night before:
-    // Only allow if we can potentially form a 3 or 4 night block
-    // For now, optimistically allow and validate on block end
+    let canExtend = 0;
+    for (let i = dateIndex + 1; i < dates.length; i++) {
+      const d = dates[i];
+      if (this.isInRecoveryWindow(providerName, d)) break;
+      const pd = this.getProviderDay(providerName, d);
+
+      if (pd.locked && pd.assigned && !this.isNight(pd.assigned)) break;
+      if (pd.locked && pd.assigned && this.isNight(pd.assigned)) { canExtend++; continue; }
+
+      if (this.isShiftAllowed(provider, pd, "N", d)) { canExtend++; } else { break; }
+
+      if (nightsBefore + 1 + canExtend >= 4) break;
+    }
+
+    const potential = nightsBefore + 1 + canExtend;
+    if (potential < 3) return false;
+    if (nightsBefore + 1 > 4) return false;
     return true;
   }
 
@@ -473,6 +494,18 @@ export class HardScheduler {
       // If night shift and already at night quota, skip (unless really needed)
       if (this.isNight(shift) && currentCounts.nights >= nightQuota + 1) {
         continue;
+      }
+
+      // Do not end Coffin's night block prematurely: if yesterday was N and shift is not N,
+      // only allow ending if the block so far is 2 or 3 nights (so ending creates 3 or 4).
+      if (providerName === "David Coffin" && !this.isNight(shift) && this.wasNightYesterday(providerName, date)) {
+        const prevDate = this.getPreviousDate(date);
+        if (prevDate) {
+          const blockSoFar = this.getConsecutiveNightCount(providerName, prevDate);
+          if (blockSoFar < 2 || blockSoFar > 3) {
+            continue;
+          }
+        }
       }
 
       // Assign the shift
