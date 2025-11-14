@@ -26,6 +26,9 @@ export class HardScheduler {
   
   // Night block recovery tracking
   recoveryWindows: Map<string, Set<string>> = new Map(); // providerName -> Set of dates in recovery
+  
+  // Track which shift types have been assigned per date (to prevent duplicates)
+  assignedShiftsPerDate: Record<string, Set<string>> = {}; // date -> Set of shift codes already assigned
 
   constructor() {}
 
@@ -49,9 +52,10 @@ export class HardScheduler {
   setCoveragePattern(pattern: Record<string, number>) {
     this.coveragePattern = pattern;
 
-    // initialize schedule object for each date
+    // initialize schedule object and shift tracking for each date
     Object.keys(pattern).forEach(date => {
       this.schedule[date] = {};
+      this.assignedShiftsPerDate[date] = new Set();
     });
   }
 
@@ -75,6 +79,12 @@ export class HardScheduler {
         // Preassigned real shift (like D1, A10...)
         if (day.assigned && SHIFT_CODES.has(day.assigned)) {
           this.schedule[date][name] = day.assigned;
+          
+          // Track the assigned shift type
+          if (!this.assignedShiftsPerDate[date]) {
+            this.assignedShiftsPerDate[date] = new Set();
+          }
+          this.assignedShiftsPerDate[date].add(day.assigned);
 
           // reduce coverage requirement
           if (this.coveragePattern[date] > 0) {
@@ -343,6 +353,11 @@ export class HardScheduler {
 
         // Try assigning each shift
         for (let shift of SHIFT_CODES) {
+          // Check if this shift type is already assigned to someone else today
+          if (this.assignedShiftsPerDate[date]?.has(shift)) {
+            continue; // Skip - this shift type is already taken today
+          }
+
           // rest-hour check
           if (this.violatesRest(provider.name, date, shift, provider))
             continue;
@@ -358,6 +373,12 @@ export class HardScheduler {
 
           // assign
           this.schedule[date][provider.name] = shift;
+          
+          // Track the assigned shift type
+          if (!this.assignedShiftsPerDate[date]) {
+            this.assignedShiftsPerDate[date] = new Set();
+          }
+          this.assignedShiftsPerDate[date].add(shift);
           
           // Track night blocks and enforce recovery
           if (this.isNight(shift)) {
