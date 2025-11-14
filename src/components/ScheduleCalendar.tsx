@@ -223,9 +223,28 @@ export const ScheduleCalendar = ({ schedule, month }: ScheduleCalendarProps) => 
                   <div className="space-y-1">
                     {daySchedule.assignments
                       .sort((a, b) => {
-                        const hourA = getShiftStartHour(a.shift, daySchedule.pattern);
-                        const hourB = getShiftStartHour(b.shift, daySchedule.pattern);
-                        return hourA - hourB;
+                        // Define shift order: D1, D2, MIDA, MIDB, E, then N, then FT, then admin
+                        const shiftOrder: { [key: string]: number } = {
+                          'D1': 0,
+                          'D2': 1,
+                          'MIDA': 2,
+                          'MID1': 2,
+                          'MIDB': 3,
+                          'MID2': 3,
+                          'E': 4,
+                          'N': 5,
+                          'FT AM': 6,
+                          'FT PM': 7,
+                          'FT W': 8,
+                          'FT W12': 9,
+                          'C': 10,
+                          'CALL': 11,
+                          'ADMIN': 12,
+                          'A10': 12
+                        };
+                        const orderA = shiftOrder[a.shift] ?? 99;
+                        const orderB = shiftOrder[b.shift] ?? 99;
+                        return orderA - orderB;
                       })
                       .map((assignment, aIdx) => (
                       <div
