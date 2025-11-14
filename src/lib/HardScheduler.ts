@@ -144,20 +144,22 @@ export class HardScheduler {
   // CHECK REST HOURS + NIGHT RECOVERY
   // --------------------------------------------------------------------------
   violatesRest(providerName: string, date: string, shift: string, provider: any): boolean {
-    // Option A + your rules: preassigned shifts already validated before scheduling;
-    // rest-hour enforcement applies only during generation.
-    // Implement minimal rest-hour protection:
-
-    // Find previous date assignment
-    const prevDate = this.getPreviousDate(date);
-    if (!prevDate) return false;
-
-    const prevShift = this.schedule[prevDate]?.[providerName];
-    if (!prevShift || prevShift === "OFF") return false;
-
-    // naive rest-hour block:
-    if (prevShift === "N" && ["D1","D2","MIDA","MIDB","FT AM"].includes(shift)) {
-      return true;
+    // Enforce 48-hour rest after night shifts (no work for 2 full days)
+    const dates = Object.keys(this.schedule).sort();
+    const currentIndex = dates.indexOf(date);
+    
+    if (currentIndex < 2) return false; // Can't violate if we're in first 2 days
+    
+    // Check if provider worked night shift in the previous 2 days
+    for (let i = 1; i <= 2; i++) {
+      const checkDate = dates[currentIndex - i];
+      if (!checkDate) continue;
+      
+      const checkShift = this.schedule[checkDate]?.[providerName];
+      if (checkShift === "N") {
+        // Night shift found within last 2 days - no work allowed
+        return true;
+      }
     }
 
     return false;
