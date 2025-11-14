@@ -226,6 +226,67 @@ export class HardScheduler {
   }
 
   // --------------------------------------------------------------------------
+  // NIGHT BLOCK SIZE VALIDATION (for David Coffin)
+  // --------------------------------------------------------------------------
+  
+  getConsecutiveNightCount(providerName: string, endDate: string): number {
+    const dates = Object.keys(this.schedule).sort();
+    const endIndex = dates.indexOf(endDate);
+    if (endIndex === -1) return 0;
+
+    let count = 0;
+    for (let i = endIndex; i >= 0; i--) {
+      const shift = this.schedule[dates[i]]?.[providerName];
+      if (this.isNight(shift)) {
+        count++;
+      } else {
+        break;
+      }
+    }
+    return count;
+  }
+
+  canFormValidNightBlock(providerName: string, date: string): boolean {
+    // Only David Coffin has block size restrictions (3 or 4 nights)
+    if (providerName !== "David Coffin") return true;
+
+    const dates = Object.keys(this.schedule).sort();
+    const dateIndex = dates.indexOf(date);
+    if (dateIndex === -1) return false;
+
+    // Count consecutive nights before this date
+    const nightsBefore = this.getConsecutiveNightCount(providerName, dates[dateIndex - 1] || date);
+
+    // If already at 4 nights, can't add more
+    if (nightsBefore >= 4) return false;
+
+    // If this would be the 3rd or 4th night, allow
+    if (nightsBefore === 2 || nightsBefore === 3) return true;
+
+    // If starting a new block (0 nights before) or 1 night before:
+    // Only allow if we can potentially form a 3 or 4 night block
+    // For now, optimistically allow and validate on block end
+    return true;
+  }
+
+  validateNightBlockSize(providerName: string, blockEndDate: string): boolean {
+    // Only David Coffin has block size restrictions
+    if (providerName !== "David Coffin") return true;
+
+    const blockSize = this.getConsecutiveNightCount(providerName, blockEndDate);
+    
+    // Valid block sizes are 3 or 4
+    if (blockSize < 3 || blockSize > 4) {
+      this.warnings.push(
+        `${providerName}: Night block of ${blockSize} shifts detected (must be 3 or 4). Block ending ${blockEndDate}`
+      );
+      return false;
+    }
+    
+    return true;
+  }
+
+  // --------------------------------------------------------------------------
   // MAIN SOLVER - TARGET-AWARE GREEDY WITH MULTI-PASS
   // --------------------------------------------------------------------------
   solve() {
@@ -243,8 +304,19 @@ export class HardScheduler {
         
         // Check if a night block is ending
         if (shift && !this.isNight(shift) && this.wasNightYesterday(providerName, date)) {
+          const prevDate = this.getPreviousDate(date);
+          if (prevDate) {
+            this.validateNightBlockSize(providerName, prevDate);
+          }
           this.enforcePostNightBlockRecovery(providerName, date);
         }
+      }
+      
+      // Check if month ends with an incomplete night block
+      const lastDate = dates[dates.length - 1];
+      const lastShift = this.schedule[lastDate]?.[providerName];
+      if (this.isNight(lastShift)) {
+        this.validateNightBlockSize(providerName, lastDate);
       }
     }
 
@@ -372,6 +444,11 @@ export class HardScheduler {
       // Check eligibility
       if (!this.isShiftAllowed(provider, providerDay, shift, date)) continue;
 
+      // Special validation for David Coffin's night blocks
+      if (this.isNight(shift) && !this.canFormValidNightBlock(providerName, date)) {
+        continue;
+      }
+
       // If weekend and already at quota, skip (unless really needed)
       if (isWeekend && WORK_SHIFTS.has(shift) && currentCounts.weekends >= weekendQuota + 1) {
         continue;
@@ -384,7 +461,11 @@ export class HardScheduler {
       if (this.isNight(shift)) {
         // Provider assigned a night shift - track but don't enforce recovery yet
       } else if (this.wasNightYesterday(providerName, date)) {
-        // Block is ending - enforce recovery starting AFTER this date
+        // Block is ending - validate size and enforce recovery
+        const prevDate = this.getPreviousDate(date);
+        if (prevDate) {
+          this.validateNightBlockSize(providerName, prevDate);
+        }
         this.enforcePostNightBlockRecovery(providerName, date);
       }
       
