@@ -96,7 +96,18 @@ export const ScheduleTable = ({ schedule, month }: ScheduleTableProps) => {
               </div>
 
               <div className="space-y-2">
-                {day.assignments.map((assignment, aIdx) => (
+                {day.assignments
+                  .sort((a, b) => {
+                    // Define shift order: Night first, then FT shifts, then others, then admin
+                    const getOrder = (shift: string) => {
+                      if (shift === 'N') return 0;
+                      if (shift.startsWith('FT')) return 1;
+                      if (shift === 'ADMIN' || shift === 'CALL') return 3;
+                      return 2;
+                    };
+                    return getOrder(a.shift) - getOrder(b.shift);
+                  })
+                  .map((assignment, aIdx) => (
                   <div 
                     key={aIdx}
                     className="flex items-center justify-between p-2 rounded-lg bg-muted/50"
