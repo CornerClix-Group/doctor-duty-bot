@@ -22,6 +22,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/integrations/supabase/client';
+import { PublishedScheduleViewer } from '@/components/PublishedScheduleViewer';
 
 const Dashboard = () => {
   const navigate = useNavigate();
@@ -256,6 +257,11 @@ const Dashboard = () => {
                 </Card>
               ))}
             </div>
+          </div>
+
+          {/* Published Schedule Viewer */}
+          <div className="mb-8">
+            <PublishedScheduleViewer />
           </div>
 
           {/* Recent Activity */}

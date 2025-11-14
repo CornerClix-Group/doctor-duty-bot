@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
-import { Loader2, Sparkles, Calendar, Download, Trash2, ArrowLeft, FileSpreadsheet } from 'lucide-react';
+import { Loader2, Sparkles, Calendar, Download, Trash2, ArrowLeft, FileSpreadsheet, Eye } from 'lucide-react';
 import { ScheduleUpload } from '@/components/ScheduleUpload';
 import { ScheduleCalendar } from '@/components/ScheduleCalendar';
 import { ProviderStats } from '@/components/ProviderStats';
@@ -135,14 +135,16 @@ export default function GenerateSchedule() {
           month,
           year,
           schedule_data: generatedSchedule.schedule,
-          provider_totals: generatedSchedule.providerTotals,
+          provider_totals: generatedSchedule.provider_totals || generatedSchedule.providerTotals,
+          created_by: (await supabase.auth.getUser()).data.user?.id,
+          status: 'draft'
         });
 
       if (error) throw error;
 
       toast({
         title: 'Schedule Saved',
-        description: 'Schedule has been saved to the database',
+        description: 'Schedule has been saved as draft',
       });
     } catch (error: any) {
       console.error('Error saving schedule:', error);
@@ -196,6 +198,61 @@ export default function GenerateSchedule() {
       console.error('Error exporting schedule:', error);
       toast({
         title: 'Export Failed',
+        description: error.message,
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const handlePublishSchedule = async () => {
+    try {
+      if (!generatedSchedule) return;
+
+      // First check if schedule already exists
+      const { data: existing, error: fetchError } = await supabase
+        .from('schedules')
+        .select('id')
+        .eq('month', month)
+        .eq('year', year)
+        .maybeSingle();
+
+      if (fetchError) throw fetchError;
+
+      if (existing) {
+        // Update existing schedule to published
+        const { error } = await supabase
+          .from('schedules')
+          .update({ 
+            schedule_data: generatedSchedule.schedule || [],
+            provider_totals: generatedSchedule.provider_totals || {},
+            status: 'published',
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', existing.id);
+
+        if (error) throw error;
+      } else {
+        // Create new schedule as published
+        const { error } = await supabase.from('schedules').insert({
+          month,
+          year,
+          schedule_data: generatedSchedule.schedule || [],
+          provider_totals: generatedSchedule.provider_totals || {},
+          created_by: (await supabase.auth.getUser()).data.user?.id,
+          status: 'published'
+        });
+
+        if (error) throw error;
+      }
+
+      toast({
+        title: 'Schedule Published',
+        description: 'Schedule is now visible to all providers',
+      });
+    } catch (error: any) {
+      console.error('Error publishing schedule:', error);
+      toast({
+        title: 'Publish Failed',
         description: error.message,
         variant: 'destructive',
       });
@@ -351,8 +408,17 @@ export default function GenerateSchedule() {
           {generatedSchedule && (
             <>
               <Button
-                onClick={handleExportExcel}
+                onClick={handlePublishSchedule}
                 variant="default"
+                size="lg"
+              >
+                <Eye className="mr-2 h-5 w-5" />
+                Publish Schedule
+              </Button>
+
+              <Button
+                onClick={handleExportExcel}
+                variant="secondary"
                 size="lg"
               >
                 <FileSpreadsheet className="mr-2 h-5 w-5" />
@@ -361,11 +427,11 @@ export default function GenerateSchedule() {
 
               <Button
                 onClick={handleSaveSchedule}
-                variant="secondary"
+                variant="outline"
                 size="lg"
               >
                 <Download className="mr-2 h-5 w-5" />
-                Save to Database
+                Save Draft
               </Button>
               
               <AlertDialog>
@@ -375,7 +441,7 @@ export default function GenerateSchedule() {
                     size="lg"
                   >
                     <Trash2 className="mr-2 h-5 w-5" />
-                    Clear Schedule
+                    Clear
                   </Button>
                 </AlertDialogTrigger>
                 <AlertDialogContent>
