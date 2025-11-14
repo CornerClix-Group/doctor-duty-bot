@@ -348,6 +348,93 @@ export class HardScheduler {
   }
 
   // --------------------------------------------------------------------------
+  // STREAK LOGIC FOR CONSECUTIVE WORK DAYS
+  // --------------------------------------------------------------------------
+  
+  /**
+   * Check if provider should use streak logic (excludes Coffin, Lopez, Venugopal)
+   */
+  shouldUseStreakLogic(providerName: string): boolean {
+    const excluded = ["David Coffin", "Lopez", "Venugopal"];
+    return !excluded.some(name => providerName.includes(name));
+  }
+
+  /**
+   * Get consecutive work days before this date
+   */
+  getWorkStreak(providerName: string, date: string): number {
+    const dates = Object.keys(this.schedule).sort();
+    const dateIndex = dates.indexOf(date);
+    if (dateIndex <= 0) return 0;
+
+    let streak = 0;
+    for (let i = dateIndex - 1; i >= 0; i--) {
+      const d = dates[i];
+      const shift = this.schedule[d]?.[providerName];
+      
+      if (shift && shift !== "OFF" && SHIFT_CODES.has(shift)) {
+        streak++;
+      } else {
+        break;
+      }
+    }
+    return streak;
+  }
+
+  /**
+   * Check if provider can potentially work tomorrow (for 2-3 day blocks)
+   */
+  canWorkTomorrow(providerName: string, provider: any, date: string): boolean {
+    const dates = Object.keys(this.schedule).sort();
+    const dateIndex = dates.indexOf(date);
+    if (dateIndex >= dates.length - 1) return false;
+
+    const nextDate = dates[dateIndex + 1];
+    const nextProviderDay = this.getProviderDay(providerName, nextDate);
+    
+    // Check if tomorrow is locked or OFF
+    if (nextProviderDay.assigned === "OFF") return false;
+    if (nextProviderDay.locked && nextProviderDay.assigned) return false;
+    
+    // Basic eligibility check (simplified)
+    return true;
+  }
+
+  /**
+   * Score provider for assignment on this date (higher = better)
+   */
+  scoreProviderForDate(providerName: string, provider: any, date: string): number {
+    if (!this.shouldUseStreakLogic(providerName)) {
+      return 0; // Neutral score for excluded providers
+    }
+
+    const streak = this.getWorkStreak(providerName, date);
+    const canContinue = this.canWorkTomorrow(providerName, provider, date);
+
+    // Prefer continuing 1-2 day streaks
+    if (streak === 1 || streak === 2) {
+      return 10 + streak; // Priority: complete 2-3 day blocks
+    }
+
+    // Avoid creating single-day assignments
+    if (streak === 1 && !canContinue) {
+      return -10; // Bad: creates isolated work day
+    }
+
+    // Fresh start (no recent work) is good
+    if (streak === 0) {
+      return 5; // Good for starting new block
+    }
+
+    // Already worked 3+ days in a row - lower priority
+    if (streak >= 3) {
+      return -5;
+    }
+
+    return 0; // Neutral
+  }
+
+  // --------------------------------------------------------------------------
   // MAIN SOLVER
   // --------------------------------------------------------------------------
   solve() {
@@ -386,7 +473,13 @@ export class HardScheduler {
 
       if (coverageNeeded <= 0) continue; // all covered by preassignments
 
-      for (let provider of this.providers) {
+      // Sort providers by streak score for this date (highest first)
+      const scoredProviders = this.providers.map(provider => ({
+        provider,
+        score: this.scoreProviderForDate(provider.name, provider, date)
+      })).sort((a, b) => b.score - a.score);
+
+      for (let { provider } of scoredProviders) {
         if (coverageNeeded <= 0) break;
 
         const providerDay = this.getProviderDay(provider.name, date);
