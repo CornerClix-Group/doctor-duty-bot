@@ -4,9 +4,17 @@ import { Card } from '@/components/ui/card';
 import { ScheduleCalendar } from '@/components/ScheduleCalendar';
 import { Loader2, Calendar } from 'lucide-react';
 
+interface ScheduleData {
+  id: string;
+  month: string;
+  year: number;
+  schedule_data: any;
+  created_at: string;
+}
+
 export const PublishedScheduleViewer = () => {
   const [loading, setLoading] = useState(true);
-  const [schedule, setSchedule] = useState<any>(null);
+  const [schedule, setSchedule] = useState<ScheduleData | null>(null);
 
   useEffect(() => {
     fetchPublishedSchedule();
@@ -17,18 +25,19 @@ export const PublishedScheduleViewer = () => {
       setLoading(true);
       
       // Get the most recent published schedule
-      const { data, error } = await supabase
+      const result = await (supabase as any)
         .from('schedules')
-        .select('*')
+        .select('id, month, year, schedule_data, created_at')
         .eq('status', 'published')
-        .order('year', { ascending: false })
-        .order('month', { ascending: false })
+        .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle();
 
-      if (error) throw error;
+      if (result.error) throw result.error;
       
-      setSchedule(data);
+      if (result.data) {
+        setSchedule(result.data);
+      }
     } catch (error) {
       console.error('Error fetching published schedule:', error);
     } finally {

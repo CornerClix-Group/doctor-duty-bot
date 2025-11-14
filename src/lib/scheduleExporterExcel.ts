@@ -57,7 +57,11 @@ export async function exportScheduleToExcel(
   const firstDay = schedule.find(d => d.pay_period !== undefined);
   const startingPP = firstDay?.pay_period || 1;
 
-  // Build provider list from totals
+  // Build provider list from totals - handle null/undefined
+  if (!providerTotals || Object.keys(providerTotals).length === 0) {
+    throw new Error('No provider totals available for export');
+  }
+  
   const providerNames = Object.keys(providerTotals);
 
   // Build headers and rows
@@ -78,7 +82,7 @@ export async function exportScheduleToExcel(
   const row2: any[] = ['Coverage #', '', ''];
   for (let d = 1; d <= daysInMonth; d++) {
     const dateStr = new Date(year, monthIndex, d).toISOString().split('T')[0];
-    const coverage = coveragePattern?.[dateStr] || 8;
+    const coverage = (coveragePattern && coveragePattern[dateStr]) || 8;
     row2.push(coverage);
   }
   row2.push('');
@@ -104,17 +108,26 @@ export async function exportScheduleToExcel(
 
   // Build schedule map: date -> provider -> shift
   const scheduleMap: { [date: string]: { [provider: string]: string } } = {};
-  schedule.forEach(day => {
-    const dateKey = day.date.split('T')[0];
-    scheduleMap[dateKey] = {};
-    day.assignments.forEach(assignment => {
-      scheduleMap[dateKey][assignment.provider] = assignment.shift;
+  if (schedule && Array.isArray(schedule)) {
+    schedule.forEach(day => {
+      if (!day || !day.date) return;
+      const dateKey = day.date.split('T')[0];
+      scheduleMap[dateKey] = {};
+      if (day.assignments && Array.isArray(day.assignments)) {
+        day.assignments.forEach(assignment => {
+          if (assignment && assignment.provider && assignment.shift) {
+            scheduleMap[dateKey][assignment.provider] = assignment.shift;
+          }
+        });
+      }
     });
-  });
+  }
 
   // Provider rows
   providerNames.forEach((name) => {
     const stats = providerTotals[name];
+    if (!stats) return; // Skip if no stats for this provider
+    
     const weekendQuota = stats.weekend_quota ?? stats.weekendQuota ?? 0;
     const nightQuota = stats.night_quota ?? 0;
     
@@ -123,12 +136,12 @@ export async function exportScheduleToExcel(
     // Fill in daily assignments
     for (let d = 1; d <= daysInMonth; d++) {
       const dateStr = new Date(year, monthIndex, d).toISOString().split('T')[0];
-      const shift = scheduleMap[dateStr]?.[name] || '';
+      const shift = (scheduleMap[dateStr] && scheduleMap[dateStr][name]) || '';
       row.push(shift);
     }
     
     // Total shifts worked
-    row.push(stats.worked);
+    row.push(stats.worked || 0);
     ws.addRow(row);
   });
 
