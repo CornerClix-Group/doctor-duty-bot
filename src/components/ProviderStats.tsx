@@ -1,16 +1,18 @@
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
-import { Users, TrendingUp, Calendar } from 'lucide-react';
+import { Users, TrendingUp, Calendar, Moon } from 'lucide-react';
 
 interface ProviderTotals {
   worked: number;
   weekends: number;
+  nights?: number;
   call?: number;
   admin?: number;
   target?: number;
   weekend_quota?: number;
   weekendQuota?: number;
+  night_quota?: number;
 }
 
 interface ProviderStatsProps {
@@ -40,6 +42,10 @@ export const ProviderStats = ({ providerTotals }: ProviderStatsProps) => {
             const weekendProgress = quota
               ? (stats.weekends / quota) * 100
               : 100;
+            const nightQuota = stats.night_quota ?? 0;
+            const nightProgress = nightQuota
+              ? ((stats.nights ?? 0) / nightQuota) * 100
+              : 100;
 
             return (
               <div key={provider} className="space-y-3 p-4 rounded-lg bg-muted/30">
@@ -54,6 +60,12 @@ export const ProviderStats = ({ providerTotals }: ProviderStatsProps) => {
                       <Calendar className="h-3 w-3 mr-1" />
                       {stats.weekends} weekends
                     </Badge>
+                    {stats.nights !== undefined && (
+                      <Badge variant="outline" className="text-xs">
+                        <Moon className="h-3 w-3 mr-1" />
+                        {stats.nights} nights
+                      </Badge>
+                    )}
                   </div>
                 </div>
 
@@ -78,6 +90,18 @@ export const ProviderStats = ({ providerTotals }: ProviderStatsProps) => {
                       </span>
                     </div>
                     <Progress value={weekendProgress} className="h-2" />
+                  </div>
+                )}
+
+                {nightQuota > 0 && (
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-muted-foreground">Night quota</span>
+                      <span className="font-medium">
+                        {stats.nights ?? 0} / {nightQuota}
+                      </span>
+                    </div>
+                    <Progress value={nightProgress} className="h-2" />
                   </div>
                 )}
               </div>
