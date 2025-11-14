@@ -171,11 +171,47 @@ export default function GenerateSchedule() {
       // Normalize schedule format
       const scheduleArray = generatedSchedule.schedule || [];
 
+      // Check if provider_totals exists, if not calculate from schedule
+      let providerTotals = generatedSchedule.provider_totals;
+      
+      if (!providerTotals || Object.keys(providerTotals).length === 0) {
+        // Calculate provider totals from schedule data
+        providerTotals = {};
+        scheduleArray.forEach((day: any) => {
+          if (day.assignments && Array.isArray(day.assignments)) {
+            day.assignments.forEach((assignment: any) => {
+              const provider = assignment.provider;
+              if (!providerTotals[provider]) {
+                providerTotals[provider] = {
+                  worked: 0,
+                  weekends: 0,
+                  call: 0,
+                  admin: 0,
+                  night: 0
+                };
+              }
+              providerTotals[provider].worked += 1;
+              
+              // Check if weekend (day 0 = Sunday, 6 = Saturday)
+              const date = new Date(day.date);
+              if (date.getDay() === 0 || date.getDay() === 6) {
+                providerTotals[provider].weekends += 1;
+              }
+              
+              // Count night shifts
+              if (assignment.shift === 'N') {
+                providerTotals[provider].night += 1;
+              }
+            });
+          }
+        });
+      }
+
       const buffer = await exportScheduleToExcel(
         scheduleArray,
         month,
         year,
-        generatedSchedule.provider_totals,
+        providerTotals,
         uploadedData?.coverage_pattern
       );
 
