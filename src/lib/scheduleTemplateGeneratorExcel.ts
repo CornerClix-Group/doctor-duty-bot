@@ -35,7 +35,7 @@ export async function generateScheduleTemplateBuffer(
   const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
 
   // Build headers and rows
-  const row1: any[] = [`${monthName} ${year}`, '', ''];
+  const row1: any[] = [`${monthName} ${year}`, 'Weekend', 'Night'];
   const blockColors: string[] = [];
   let blockIdx = startingBlockIndex;
   for (let d = 1; d <= daysInMonth; d++) {
@@ -44,7 +44,7 @@ export async function generateScheduleTemplateBuffer(
     row1.push(`PP${pp}`);
     blockColors.push(PP_COLORS[blockIdx]);
   }
-  row1.push('');
+  row1.push('Total');
   ws.addRow(row1);
 
   // Row 2: Coverage # (DEFAULT values - fully editable by user)
@@ -101,6 +101,19 @@ export async function generateScheduleTemplateBuffer(
     };
     cell.alignment = { horizontal: 'center', vertical: 'middle' };
   }
+
+  // Format header cells for columns A, B, C, and Total
+  const headerCells = [
+    ws.getCell(1, 1), // Column A - Month/Year
+    ws.getCell(1, 2), // Column B - Weekend
+    ws.getCell(1, 3), // Column C - Night
+    ws.getCell(1, 4 + daysInMonth), // Last column - Total
+  ];
+  
+  headerCells.forEach(cell => {
+    cell.font = { bold: true };
+    cell.alignment = { horizontal: 'center', vertical: 'middle' };
+  });
 
   // Weekend shading (Rows 2 onwards, all columns including weekend days)
   const lastRow = 4 + providerNames.length;
