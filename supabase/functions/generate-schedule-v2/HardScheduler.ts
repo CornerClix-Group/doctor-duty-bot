@@ -318,6 +318,96 @@ export class HardScheduler {
   }
 
   // --------------------------------------------------------------------------
+  // STREAK LOGIC FOR CONSECUTIVE WORK DAYS
+  // --------------------------------------------------------------------------
+  
+  /**
+   * Check if provider should use streak logic (excludes Coffin, Lopez, Venugopal)
+   */
+  shouldUseStreakLogic(providerName: string): boolean {
+    const excluded = ["David Coffin", "Lopez", "Venugopal"];
+    return !excluded.some(name => providerName.includes(name));
+  }
+
+  /**
+   * Get consecutive work days before this date
+   */
+  getWorkStreak(providerName: string, date: string): number {
+    const dates = Object.keys(this.schedule).sort();
+    const dateIndex = dates.indexOf(date);
+    if (dateIndex <= 0) return 0;
+
+    let streak = 0;
+    for (let i = dateIndex - 1; i >= 0; i--) {
+      const d = dates[i];
+      const shift = this.schedule[d]?.[providerName];
+      
+      if (shift && shift !== "OFF" && SHIFT_CODES.has(shift)) {
+        streak++;
+      } else {
+        break;
+      }
+    }
+    return streak;
+  }
+
+  /**
+   * Check if provider can potentially work tomorrow (for 2-3 day blocks)
+   */
+  canWorkTomorrow(providerName: string, provider: any, date: string): boolean {
+    const dates = Object.keys(this.schedule).sort();
+    const dateIndex = dates.indexOf(date);
+    if (dateIndex >= dates.length - 1) return false;
+
+    const nextDate = dates[dateIndex + 1];
+    const nextProviderDay = this.getProviderDay(providerName, nextDate);
+    
+    // Check if tomorrow is locked or OFF
+    if (nextProviderDay.assigned === "OFF") return false;
+    if (nextProviderDay.locked && nextProviderDay.assigned) return false;
+    
+    // Basic eligibility check (simplified)
+    return true;
+  }
+
+  /**
+   * Score provider for assignment on this date (higher = better)
+   * Combines target-based priority with streak logic
+   */
+  scoreProviderForDate(providerName: string, provider: any, date: string, currentWorked: number): number {
+    const target = provider.target_shifts || 0;
+    const delta = currentWorked - target;
+    
+    // Base score: how far below/above target (-10 to +10 range typically)
+    let score = -delta;
+
+    // Add streak bonus/penalty only for providers using streak logic
+    if (this.shouldUseStreakLogic(providerName)) {
+      const streak = this.getWorkStreak(providerName, date);
+      const canContinue = this.canWorkTomorrow(providerName, provider, date);
+
+      // Strongly prefer continuing 1-2 day streaks
+      if (streak === 1 || streak === 2) {
+        score += 15 + (streak * 2); // Big bonus for completing 2-3 day blocks
+      }
+      // Penalize single-day assignments that can't continue
+      else if (streak === 1 && !canContinue) {
+        score -= 15;
+      }
+      // Fresh start is moderately good
+      else if (streak === 0) {
+        score += 5;
+      }
+      // Already worked 3+ days - slight penalty
+      else if (streak >= 3) {
+        score -= 5;
+      }
+    }
+
+    return score;
+  }
+
+  // --------------------------------------------------------------------------
   // MAIN SOLVER - TARGET-AWARE GREEDY WITH MULTI-PASS
   // --------------------------------------------------------------------------
   solve() {
@@ -593,8 +683,31 @@ export class HardScheduler {
       const target = providerData?.target_shifts || 0;
       const weekendQuota = providerData?.weekend_quota || 0;
 
-      // Higher priority = further below target
-      const priority = (target - currentCounts.worked) * 10 + (weekendQuota - currentCounts.weekends);
+      // Base priority: further below target = higher priority
+      let priority = (target - currentCounts.worked) * 10 + (weekendQuota - currentCounts.weekends);
+
+      // Add streak bonus/penalty for providers using streak logic
+      if (this.shouldUseStreakLogic(providerName)) {
+        const streak = this.getWorkStreak(providerName, date);
+        const canContinue = this.canWorkTomorrow(providerName, provider, date);
+
+        // Strongly prefer continuing 1-2 day streaks
+        if (streak === 1 || streak === 2) {
+          priority += 15 + (streak * 2); // Big bonus for completing 2-3 day blocks
+        }
+        // Penalize single-day assignments that can't continue
+        else if (streak === 1 && !canContinue) {
+          priority -= 15;
+        }
+        // Fresh start is moderately good
+        else if (streak === 0) {
+          priority += 5;
+        }
+        // Already worked 3+ days - slight penalty
+        else if (streak >= 3) {
+          priority -= 5;
+        }
+      }
 
       eligible.push({ providerName, provider, priority });
     }
