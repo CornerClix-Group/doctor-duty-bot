@@ -20,7 +20,7 @@ export class HardScheduler {
   coveragePattern: Record<string, number> = {}; // e.g., { "2026-01-01": 7 }
 
   schedule: Record<string, Record<string, string | null>> = {}; 
-  providerTotals: Record<string, number> = {};
+  providerTotals: Record<string, { worked: number; weekends: number; nights: number; target: number; weekend_quota: number; night_quota: number }> = {};
   payPeriodTotals: Record<number, number> = {};
   warnings: string[] = [];
   
@@ -235,6 +235,18 @@ export class HardScheduler {
     return day?.locked === true;
   }
 
+  getCurrentNightCount(providerName: string): number {
+    let count = 0;
+    const dates = Object.keys(this.schedule).sort();
+    for (const date of dates) {
+      const shift = this.schedule[date]?.[providerName];
+      if (this.isNight(shift)) {
+        count++;
+      }
+    }
+    return count;
+  }
+
   // --------------------------------------------------------------------------
   // NIGHT BLOCK SIZE VALIDATION (for David Coffin)
   // --------------------------------------------------------------------------
@@ -371,6 +383,16 @@ export class HardScheduler {
             continue;
           }
 
+          // Check if provider is at or exceeding night quota (soft limit)
+          if (this.isNight(shift)) {
+            const providerData = this.providerDays.find((p: any) => p.name === provider.name);
+            const nightQuota = providerData?.night_quota || 0;
+            const currentNights = this.getCurrentNightCount(provider.name);
+            if (currentNights >= nightQuota + 1) {
+              continue; // Try to avoid exceeding quota by more than 1
+            }
+          }
+
           // assign
           this.schedule[date][provider.name] = shift;
           
@@ -431,11 +453,20 @@ export class HardScheduler {
   // COMPUTE TOTALS (per provider + per pay period)
   // --------------------------------------------------------------------------
   computeTotals() {
-    const providers = this.providers.map(p => p.name);
-
-    providers.forEach(name => {
-      this.providerTotals[name] = 0;
-    });
+    const WORK_SHIFTS = new Set(["D1","D2","MIDA","MIDB","E","N","FT W","FT W12","FT AM","FT PM"]);
+    
+    // Initialize totals from providerDays
+    for (const providerData of this.providerDays) {
+      const name = providerData.name;
+      this.providerTotals[name] = {
+        worked: 0,
+        weekends: 0,
+        nights: 0,
+        target: providerData.target_shifts || 0,
+        weekend_quota: providerData.weekend_quota || 0,
+        night_quota: providerData.night_quota || 0,
+      };
+    }
 
     const dates = Object.keys(this.schedule).sort();
 
@@ -445,8 +476,15 @@ export class HardScheduler {
 
       for (let providerName in this.schedule[date]) {
         const shift = this.schedule[date][providerName];
-        if (shift && shift !== "OFF") {
-          this.providerTotals[providerName] += 1;
+        if (shift && shift !== "OFF" && WORK_SHIFTS.has(shift)) {
+          this.providerTotals[providerName].worked += 1;
+          const dow = new Date(date).getDay();
+          if (dow === 0 || dow === 6) {
+            this.providerTotals[providerName].weekends += 1;
+          }
+          if (this.isNight(shift)) {
+            this.providerTotals[providerName].nights += 1;
+          }
           this.payPeriodTotals[ppCounter] += 1;
         }
       }

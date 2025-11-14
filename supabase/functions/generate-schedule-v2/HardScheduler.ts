@@ -20,7 +20,7 @@ export class HardScheduler {
   coveragePattern: Record<string, number> = {}; // e.g., { "2026-01-01": 7 }
 
   schedule: Record<string, Record<string, string | null>> = {}; 
-  providerTotals: Record<string, { worked: number; weekends: number; target: number; weekend_quota: number }> = {};
+  providerTotals: Record<string, { worked: number; weekends: number; nights: number; target: number; weekend_quota: number; night_quota: number }> = {};
   payPeriodTotals: Record<number, number> = {};
   warnings: string[] = [];
   
@@ -438,6 +438,7 @@ export class HardScheduler {
     );
     const target = providerData?.target_shifts || 0;
     const weekendQuota = providerData?.weekend_quota || 0;
+    const nightQuota = providerData?.night_quota || 0;
     const dow = new Date(date).getDay();
     const isWeekend = dow === 0 || dow === 6;
 
@@ -466,6 +467,11 @@ export class HardScheduler {
 
       // If weekend and already at quota, skip (unless really needed)
       if (isWeekend && WORK_SHIFTS.has(shift) && currentCounts.weekends >= weekendQuota + 1) {
+        continue;
+      }
+
+      // If night shift and already at night quota, skip (unless really needed)
+      if (this.isNight(shift) && currentCounts.nights >= nightQuota + 1) {
         continue;
       }
 
@@ -499,9 +505,9 @@ export class HardScheduler {
   // --------------------------------------------------------------------------
   // Get current shift counts for a provider
   // --------------------------------------------------------------------------
-  getCurrentCounts(providerName: string): { worked: number; weekends: number } {
+  getCurrentCounts(providerName: string): { worked: number; weekends: number; nights: number } {
     const WORK_SHIFTS = new Set(["D1","D2","MIDA","MIDB","E","N","FT W","FT W12","FT AM","FT PM"]);
-    const counts = { worked: 0, weekends: 0 };
+    const counts = { worked: 0, weekends: 0, nights: 0 };
     const dates = Object.keys(this.schedule).sort();
 
     for (const date of dates) {
@@ -510,6 +516,7 @@ export class HardScheduler {
         counts.worked++;
         const dow = new Date(date).getDay();
         if (dow === 0 || dow === 6) counts.weekends++;
+        if (this.isNight(shift)) counts.nights++;
       }
     }
 
@@ -625,8 +632,10 @@ export class HardScheduler {
       this.providerTotals[p.name] = {
         worked: 0,
         weekends: 0,
+        nights: 0,
         target: p.target_shifts || 0,
         weekend_quota: p.weekend_quota || 0,
+        night_quota: p.night_quota || 0,
       };
     }
 
@@ -655,6 +664,7 @@ export class HardScheduler {
         if (WORK_SHIFTS.has(shift)) {
           this.providerTotals[canonical].worked += 1;
           if (isWeekend) this.providerTotals[canonical].weekends += 1;
+          if (this.isNight(shift)) this.providerTotals[canonical].nights += 1;
         }
       }
 
