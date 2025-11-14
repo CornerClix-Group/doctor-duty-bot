@@ -136,7 +136,15 @@ export async function exportScheduleToExcel(
     // Fill in daily assignments
     for (let d = 1; d <= daysInMonth; d++) {
       const dateStr = new Date(year, monthIndex, d).toISOString().split('T')[0];
-      const shift = (scheduleMap[dateStr] && scheduleMap[dateStr][name]) || '';
+      const date = new Date(year, monthIndex, d);
+      const dayOfWeek = date.getDay(); // 0 = Sunday, 6 = Saturday
+      let shift = (scheduleMap[dateStr] && scheduleMap[dateStr][name]) || '';
+      
+      // Convert FT AM/FT PM to FT W on weekends
+      if ((dayOfWeek === 0 || dayOfWeek === 6) && (shift === 'FT AM' || shift === 'FT PM')) {
+        shift = 'FT W';
+      }
+      
       row.push(shift);
     }
     
