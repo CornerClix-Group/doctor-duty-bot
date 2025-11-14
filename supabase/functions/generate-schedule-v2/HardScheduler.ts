@@ -144,23 +144,24 @@ export class HardScheduler {
   // CHECK REST HOURS + NIGHT RECOVERY
   // --------------------------------------------------------------------------
   violatesRest(providerName: string, date: string, shift: string, provider: any): boolean {
-    // Enforce 48-hour rest after night shifts (no work for 2 full days)
+    // 48-hour rest AFTER the last night shift in a block.
+    // Allow consecutive nights within a block.
     const dates = Object.keys(this.schedule).sort();
-    const currentIndex = dates.indexOf(date);
-    
-    if (currentIndex < 2) return false; // Can't violate if we're in first 2 days
-    
-    // Check if provider worked night shift in the previous 2 days
-    for (let i = 1; i <= 2; i++) {
-      const checkDate = dates[currentIndex - i];
-      if (!checkDate) continue;
-      
-      const checkShift = this.schedule[checkDate]?.[providerName];
-      if (checkShift === "N") {
-        // Night shift found within last 2 days - no work allowed
-        return true;
-      }
-    }
+    const idx = dates.indexOf(date);
+    const prev = idx > 0 ? dates[idx - 1] : null;
+    const prev2 = idx > 1 ? dates[idx - 2] : null;
+
+    const prevShift = prev ? this.schedule[prev]?.[providerName] : undefined;
+    const prev2Shift = prev2 ? this.schedule[prev2]?.[providerName] : undefined;
+
+    // If assigning a Night today, allow even if last night was yesterday (continue block)
+    if (shift === 'N') return false;
+
+    // If yesterday was a night and today is not a night -> violation
+    if (prevShift === 'N' && shift !== 'OFF') return true;
+
+    // If two days ago was a night and yesterday was not -> still within 48h window
+    if (prev2Shift === 'N' && prevShift !== 'N' && shift !== 'OFF') return true;
 
     return false;
   }
@@ -199,8 +200,9 @@ export class HardScheduler {
   }
 
   getRequiredRecoveryDays(providerName: string): number {
-    // David Coffin requires 4 days, others require 2
-    return providerName === "David Coffin" ? 4 : 2;
+    // David Coffin requires 4 days, others require 2 (case-insensitive)
+    const n = (providerName || '').trim().toLowerCase();
+    return (n.includes('coffin') && n.includes('david')) ? 4 : 2;
   }
 
   enforcePostNightBlockRecovery(providerName: string, blockEndDate: string) {
@@ -303,8 +305,9 @@ export class HardScheduler {
   }
 
   validateNightBlockSize(providerName: string, blockEndDate: string): boolean {
-    // Only David Coffin has block size restrictions
-    if (providerName !== "David Coffin") return true;
+    // Only David Coffin has block size restrictions (case-insensitive)
+    const n = (providerName || '').trim().toLowerCase();
+    if (!(n.includes('coffin') && n.includes('david'))) return true;
 
     const blockSize = this.getConsecutiveNightCount(providerName, blockEndDate);
     
@@ -327,8 +330,9 @@ export class HardScheduler {
    * Check if provider should use streak logic (excludes Coffin, Lopez, Venugopal)
    */
   shouldUseStreakLogic(providerName: string): boolean {
-    const excluded = ["David Coffin", "Lopez", "Venugopal"];
-    return !excluded.some(name => providerName.includes(name));
+    const n = (providerName || '').toLowerCase();
+    const excluded = ['coffin', 'lopez', 'venugopal'];
+    return !excluded.some(name => n.includes(name));
   }
 
   /**
