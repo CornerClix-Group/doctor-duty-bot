@@ -199,6 +199,9 @@ export function parseSchedule(workbook: XLSX.WorkBook, providerProfiles?: any[])
     const weekendQuotaCell = safeCellValue(sheet[XLSX.utils.encode_cell({ r: row, c: 1 })]);
     const weekend_quota = Number(weekendQuotaCell) || 0;
 
+    const nightQuotaCell = safeCellValue(sheet[XLSX.utils.encode_cell({ r: row, c: 2 })]);
+    const night_quota = Number(nightQuotaCell) || 0;
+
     const targetShiftsCell = safeCellValue(sheet[XLSX.utils.encode_cell({ r: row, c: range.e.c })]);
     const target_shifts = Number(targetShiftsCell) || 0;
 
@@ -257,6 +260,7 @@ export function parseSchedule(workbook: XLSX.WorkBook, providerProfiles?: any[])
     providers.push({
       name: nameCell,
       weekend_quota,
+      night_quota,
       target_shifts,
       days: providerDays
     });
