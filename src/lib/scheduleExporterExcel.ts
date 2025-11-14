@@ -59,7 +59,7 @@ export async function exportScheduleToExcel(
 
   // Build provider list from totals - handle null/undefined
   if (!providerTotals || Object.keys(providerTotals).length === 0) {
-    throw new Error('No provider totals available for export');
+    throw new Error('No provider totals available for export. Please generate a schedule first.');
   }
   
   const providerNames = Object.keys(providerTotals);
