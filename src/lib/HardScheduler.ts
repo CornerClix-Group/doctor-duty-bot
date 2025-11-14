@@ -23,6 +23,9 @@ export class HardScheduler {
   providerTotals: Record<string, number> = {};
   payPeriodTotals: Record<number, number> = {};
   warnings: string[] = [];
+  
+  // Night block recovery tracking
+  recoveryWindows: Map<string, Set<string>> = new Map(); // providerName -> Set of dates in recovery
 
   constructor() {}
 
@@ -158,13 +161,92 @@ export class HardScheduler {
   }
 
   // --------------------------------------------------------------------------
+  // NIGHT BLOCK RECOVERY HELPERS
+  // --------------------------------------------------------------------------
+  
+  isNight(shift: string | null | undefined): boolean {
+    return shift === "N";
+  }
+
+  wasNightYesterday(providerName: string, date: string): boolean {
+    const prevDate = this.getPreviousDate(date);
+    if (!prevDate) return false;
+    const prevShift = this.schedule[prevDate]?.[providerName];
+    return this.isNight(prevShift);
+  }
+
+  isBlockEnding(providerName: string, date: string, currentShift: string): boolean {
+    // Block ends when:
+    // - Yesterday was N
+    // - Today is NOT N
+    const yesterday = this.getPreviousDate(date);
+    if (!yesterday) return false;
+    
+    const yesterdayShift = this.schedule[yesterday]?.[providerName];
+    return this.isNight(yesterdayShift) && !this.isNight(currentShift);
+  }
+
+  getRequiredRecoveryDays(providerName: string): number {
+    // David Coffin requires 4 days, others require 2
+    return providerName === "David Coffin" ? 4 : 2;
+  }
+
+  enforcePostNightBlockRecovery(providerName: string, blockEndDate: string) {
+    const recoveryDays = this.getRequiredRecoveryDays(providerName);
+    const dates = Object.keys(this.schedule).sort();
+    const endIndex = dates.indexOf(blockEndDate);
+    
+    if (endIndex === -1) return;
+
+    // Initialize recovery set for this provider
+    if (!this.recoveryWindows.has(providerName)) {
+      this.recoveryWindows.set(providerName, new Set());
+    }
+    const recoverySet = this.recoveryWindows.get(providerName)!;
+
+    // Mark next recoveryDays as recovery period
+    for (let i = 1; i <= recoveryDays && endIndex + i < dates.length; i++) {
+      recoverySet.add(dates[endIndex + i]);
+    }
+  }
+
+  isInRecoveryWindow(providerName: string, date: string): boolean {
+    const recoverySet = this.recoveryWindows.get(providerName);
+    return recoverySet ? recoverySet.has(date) : false;
+  }
+
+  isDateLocked(providerName: string, date: string): boolean {
+    const providerDay = this.providerDays.find((p: any) => 
+      p.name.trim().toLowerCase() === providerName.trim().toLowerCase()
+    );
+    if (!providerDay) return false;
+
+    const day = providerDay.days.find((d: any) => d.date === date);
+    return day?.locked === true;
+  }
+
+  // --------------------------------------------------------------------------
   // MAIN SOLVER
   // --------------------------------------------------------------------------
   solve() {
     // preload fixed assignments
     this.preloadAssignments();
-
+    
+    // Scan preassigned shifts to detect and enforce existing night block recoveries
     const dates = Object.keys(this.schedule).sort();
+    for (const providerData of this.providerDays) {
+      const providerName = providerData.name;
+      
+      for (let i = 0; i < dates.length; i++) {
+        const date = dates[i];
+        const shift = this.schedule[date]?.[providerName];
+        
+        // Check if a night block is ending
+        if (shift && !this.isNight(shift) && this.wasNightYesterday(providerName, date)) {
+          this.enforcePostNightBlockRecovery(providerName, date);
+        }
+      }
+    }
 
     for (let date of dates) {
       let coverageNeeded = this.coveragePattern[date] || 0;
@@ -182,6 +264,11 @@ export class HardScheduler {
         // OFF block?
         if (providerDay.assigned === "OFF") continue;
 
+        // Check if in recovery window (unless date is locked)
+        if (this.isInRecoveryWindow(provider.name, date) && !this.isDateLocked(provider.name, date)) {
+          continue;
+        }
+
         // Try assigning each shift
         for (let shift of SHIFT_CODES) {
           // rest-hour check
@@ -194,6 +281,15 @@ export class HardScheduler {
 
           // assign
           this.schedule[date][provider.name] = shift;
+          
+          // Track night blocks and enforce recovery
+          if (this.isNight(shift)) {
+            // Provider assigned a night shift - track but don't enforce recovery yet
+          } else if (this.wasNightYesterday(provider.name, date)) {
+            // Block is ending - enforce recovery starting AFTER this date
+            this.enforcePostNightBlockRecovery(provider.name, date);
+          }
+          
           coverageNeeded -= 1;
           break;
         }
