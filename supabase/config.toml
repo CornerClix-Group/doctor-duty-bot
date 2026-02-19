@@ -1,13 +1,13 @@
 project_id = "hmkzyvfkwhscvgrjewah"
 
 [functions.generate-schedule-v2]
-verify_jwt = true
+verify_jwt = false
 
 [functions.send-invitation]
-verify_jwt = true
+verify_jwt = false
 
 [functions.prepare-broadcast-emails]
-verify_jwt = true
+verify_jwt = false
 
 [functions.send-broadcast-emails]
-verify_jwt = true
+verify_jwt = false

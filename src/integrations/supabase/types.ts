@@ -228,6 +228,7 @@ export type Database = {
       }
       provider_profiles: {
         Row: {
+          active: boolean | null
           allowed_shifts: string[] | null
           block_pattern: string | null
           created_at: string | null
@@ -245,6 +246,7 @@ export type Database = {
           user_id: string | null
         }
         Insert: {
+          active?: boolean | null
           allowed_shifts?: string[] | null
           block_pattern?: string | null
           created_at?: string | null
@@ -262,6 +264,7 @@ export type Database = {
           user_id?: string | null
         }
         Update: {
+          active?: boolean | null
           allowed_shifts?: string[] | null
           block_pattern?: string | null
           created_at?: string | null
@@ -339,6 +342,7 @@ export type Database = {
           month: string
           provider_totals: Json | null
           schedule_data: Json
+          status: string
           updated_at: string
           year: number
         }
@@ -349,6 +353,7 @@ export type Database = {
           month: string
           provider_totals?: Json | null
           schedule_data: Json
+          status?: string
           updated_at?: string
           year: number
         }
@@ -359,6 +364,7 @@ export type Database = {
           month?: string
           provider_totals?: Json | null
           schedule_data?: Json
+          status?: string
           updated_at?: string
           year?: number
         }
