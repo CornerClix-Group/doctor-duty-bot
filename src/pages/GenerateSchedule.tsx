@@ -335,27 +335,17 @@ export default function GenerateSchedule() {
           </CardContent>
         </Card>
 
-        <div className="flex gap-4">
-          <Button
-            onClick={handleGenerate}
-            disabled={generating}
-            size="lg"
-            className="flex-1"
-          >
-            {generating ? (
-              <>
-                <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                Generating Schedule...
-              </>
-            ) : (
-              <>
-                <Sparkles className="mr-2 h-5 w-5" />
-                Generate Schedule with AI
-              </>
-            )}
-          </Button>
+        <ScheduleWorkbench
+          month={month}
+          year={year}
+          uploadedFileBase64={uploadedFileBase64}
+          uploadedData={uploadedData}
+          onScheduleGenerated={setGeneratedSchedule}
+          generatedSchedule={generatedSchedule}
+        />
 
-          {generatedSchedule && (
+        {generatedSchedule && (
+          <div className="flex flex-wrap gap-3">
             <>
               <Button
                 onClick={handlePublishSchedule}
@@ -410,64 +400,6 @@ export default function GenerateSchedule() {
                 </AlertDialogContent>
               </AlertDialog>
             </>
-          )}
-        </div>
-
-        {generatedSchedule && (
-          <div className="space-y-6">
-            {generatedSchedule.warnings && generatedSchedule.warnings.length > 0 && (
-              <Card>
-                <CardContent className="pt-6">
-                  <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-4">
-                    <h4 className="font-semibold text-yellow-600 mb-2">Warnings:</h4>
-                    <ul className="list-disc list-inside space-y-1">
-                      {generatedSchedule.warnings.map((w: string, i: number) => (
-                        <li key={i} className="text-sm text-yellow-700">{w}</li>
-                      ))}
-                    </ul>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-
-            <ScheduleCalendar
-              schedule={(() => {
-                if (!generatedSchedule.schedule) return [];
-
-                // Normalize to [{ date, pattern, assignments: [{shift, provider}] }]
-                return generatedSchedule.schedule.map((day: any) => {
-                  let assignments: { shift: string; provider: string }[] = [];
-
-                  if (Array.isArray(day.assignments)) {
-                    // New format from edge function
-                    assignments = day.assignments
-                      .filter((a: any) => a && a.shift && a.shift !== 'HL' && a.shift !== 'LH')
-                      .map((a: any) => ({ shift: a.shift, provider: a.provider ?? '' }));
-                  } else if (day.shifts && typeof day.shifts === 'object') {
-                    // Legacy format support
-                    for (const [shiftType, providerName] of Object.entries(day.shifts)) {
-                      if (shiftType && shiftType !== 'HL' && shiftType !== 'LH') {
-                        assignments.push({
-                          shift: shiftType,
-                          provider: (providerName as string) || ''
-                        });
-                      }
-                    }
-                  }
-
-                  return {
-                    date: day.date,
-                    pattern: day.pattern || 7,
-                    assignments
-                  };
-                });
-              })()}
-              month={`${month} ${year}`}
-            />
-
-            {generatedSchedule.provider_totals && (
-              <ProviderStats providerTotals={generatedSchedule.provider_totals} />
-            )}
           </div>
         )}
       </div>
