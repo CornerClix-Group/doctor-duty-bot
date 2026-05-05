@@ -31,7 +31,6 @@ export default function GenerateSchedule() {
   const { toast } = useToast();
   const [month, setMonth] = useState('January');
   const [year, setYear] = useState(2026);
-  const [generating, setGenerating] = useState(false);
   const [uploadedData, setUploadedData] = useState<any>(null);
   const [uploadedFileBase64, setUploadedFileBase64] = useState<string | null>(null);
   const [generatedSchedule, setGeneratedSchedule] = useState<any>(null);
