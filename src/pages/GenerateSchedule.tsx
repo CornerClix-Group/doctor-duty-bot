@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
-import { Loader2, Sparkles, Calendar, Download, Trash2, ArrowLeft, FileSpreadsheet, Eye } from 'lucide-react';
+import { Download, Trash2, ArrowLeft, FileSpreadsheet, Eye, Sparkles } from 'lucide-react';
 import { ScheduleUpload } from '@/components/ScheduleUpload';
 import { ScheduleWorkbench } from '@/components/build/ScheduleWorkbench';
 import { exportScheduleToExcel } from '@/lib/scheduleExporterExcel';
