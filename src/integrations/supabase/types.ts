@@ -99,6 +99,62 @@ export type Database = {
           },
         ]
       }
+      monthly_requests: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          honored: boolean | null
+          id: string
+          note: string | null
+          provider_id: string | null
+          provider_name: string | null
+          request_date: string | null
+          request_type: string | null
+          schedule_id: string | null
+          shift_code: string | null
+          source: string | null
+          source_text: string | null
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          honored?: boolean | null
+          id?: string
+          note?: string | null
+          provider_id?: string | null
+          provider_name?: string | null
+          request_date?: string | null
+          request_type?: string | null
+          schedule_id?: string | null
+          shift_code?: string | null
+          source?: string | null
+          source_text?: string | null
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          honored?: boolean | null
+          id?: string
+          note?: string | null
+          provider_id?: string | null
+          provider_name?: string | null
+          request_date?: string | null
+          request_type?: string | null
+          schedule_id?: string | null
+          shift_code?: string | null
+          source?: string | null
+          source_text?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "monthly_requests_schedule_id_fkey"
+            columns: ["schedule_id"]
+            isOneToOne: false
+            referencedRelation: "schedules"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       notifications: {
         Row: {
           created_at: string
@@ -129,6 +185,33 @@ export type Database = {
           title?: string
           type?: string
           user_id?: string
+        }
+        Relationships: []
+      }
+      pay_periods: {
+        Row: {
+          end_date: string
+          id: string
+          pay_date: string | null
+          pp_number: number
+          pp_year: number
+          start_date: string
+        }
+        Insert: {
+          end_date: string
+          id?: string
+          pay_date?: string | null
+          pp_number: number
+          pp_year: number
+          start_date: string
+        }
+        Update: {
+          end_date?: string
+          id?: string
+          pay_date?: string | null
+          pp_number?: number
+          pp_year?: number
+          start_date?: string
         }
         Relationships: []
       }
@@ -170,48 +253,75 @@ export type Database = {
       provider_constraints: {
         Row: {
           allowed_shifts: string[] | null
+          avoid_sunday: boolean | null
+          block_max: number | null
+          block_min: number | null
           block_pattern: string | null
           created_at: string
           disallowed_shifts: string[] | null
           id: string
+          max_consec: number | null
+          max_consec_e: number | null
           max_consecutive_n: number | null
           n_recovery_days: number | null
           preferred_shifts: string[] | null
           provider_id: string
+          recovery_after_e: number | null
+          recovery_days: number | null
           rest_hours: number | null
+          sat_disallowed_shifts: string[] | null
           saturday_restrictions: string | null
+          sun_allowed_shifts: string[] | null
           sunday_restrictions: string | null
           updated_at: string
           weekend_rules: string[] | null
         }
         Insert: {
           allowed_shifts?: string[] | null
+          avoid_sunday?: boolean | null
+          block_max?: number | null
+          block_min?: number | null
           block_pattern?: string | null
           created_at?: string
           disallowed_shifts?: string[] | null
           id?: string
+          max_consec?: number | null
+          max_consec_e?: number | null
           max_consecutive_n?: number | null
           n_recovery_days?: number | null
           preferred_shifts?: string[] | null
           provider_id: string
+          recovery_after_e?: number | null
+          recovery_days?: number | null
           rest_hours?: number | null
+          sat_disallowed_shifts?: string[] | null
           saturday_restrictions?: string | null
+          sun_allowed_shifts?: string[] | null
           sunday_restrictions?: string | null
           updated_at?: string
           weekend_rules?: string[] | null
         }
         Update: {
           allowed_shifts?: string[] | null
+          avoid_sunday?: boolean | null
+          block_max?: number | null
+          block_min?: number | null
           block_pattern?: string | null
           created_at?: string
           disallowed_shifts?: string[] | null
           id?: string
+          max_consec?: number | null
+          max_consec_e?: number | null
           max_consecutive_n?: number | null
           n_recovery_days?: number | null
           preferred_shifts?: string[] | null
           provider_id?: string
+          recovery_after_e?: number | null
+          recovery_days?: number | null
           rest_hours?: number | null
+          sat_disallowed_shifts?: string[] | null
           saturday_restrictions?: string | null
+          sun_allowed_shifts?: string[] | null
           sunday_restrictions?: string | null
           updated_at?: string
           weekend_rules?: string[] | null
@@ -336,36 +446,69 @@ export type Database = {
       }
       schedules: {
         Row: {
+          adjusted_targets: Json | null
+          assignments: Json | null
+          base_coverage_value: number | null
+          coverage_pattern: Json | null
           created_at: string
           created_by: string | null
           id: string
+          locked_at: string | null
+          locked_by: string | null
+          monday_ft_rule_active: boolean | null
           month: string
+          pp_hours: Json | null
           provider_totals: Json | null
+          published_at: string | null
+          published_by: string | null
           schedule_data: Json
           status: string
           updated_at: string
+          validation_results: Json | null
           year: number
         }
         Insert: {
+          adjusted_targets?: Json | null
+          assignments?: Json | null
+          base_coverage_value?: number | null
+          coverage_pattern?: Json | null
           created_at?: string
           created_by?: string | null
           id?: string
+          locked_at?: string | null
+          locked_by?: string | null
+          monday_ft_rule_active?: boolean | null
           month: string
+          pp_hours?: Json | null
           provider_totals?: Json | null
+          published_at?: string | null
+          published_by?: string | null
           schedule_data: Json
           status?: string
           updated_at?: string
+          validation_results?: Json | null
           year: number
         }
         Update: {
+          adjusted_targets?: Json | null
+          assignments?: Json | null
+          base_coverage_value?: number | null
+          coverage_pattern?: Json | null
           created_at?: string
           created_by?: string | null
           id?: string
+          locked_at?: string | null
+          locked_by?: string | null
+          monday_ft_rule_active?: boolean | null
           month?: string
+          pp_hours?: Json | null
           provider_totals?: Json | null
+          published_at?: string | null
+          published_by?: string | null
           schedule_data?: Json
           status?: string
           updated_at?: string
+          validation_results?: Json | null
           year?: number
         }
         Relationships: []
