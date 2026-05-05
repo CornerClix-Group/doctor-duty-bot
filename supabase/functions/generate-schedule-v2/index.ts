@@ -144,7 +144,7 @@ serve(async (req) => {
       const row = {
         month: result.month,
         year: result.year,
-        status: "solved",
+        status: "validated",
         schedule_data: result.schedule,
         provider_totals: result.provider_totals,
         assignments: result.schedule,
