@@ -1,275 +1,237 @@
-// ============================================================================
-// scheduleParser.ts — COMPLETE REWRITE
-// Final Version with Preassignments, Off Blocks, Constraint Overrides (Option A),
-// OFF always allowed by default (Option 2), and zero formatting dependency.
-// ============================================================================
-
+// ED Schedule Manager — Excel parser (spec-compliant rewrite)
 import * as XLSX from "https://esm.sh/xlsx@0.18.5";
+import {
+  OFF_CODES,
+  SUMMARY_ROW_MARKERS,
+  WHOLE_MONTH_OFF,
+  normalizeShiftToken,
+  type ShiftCode,
+} from "./shifts.ts";
 
-// ---------------------------------------------------------------------------
-// SHIFT DEFINITIONS
-// ---------------------------------------------------------------------------
-export const SHIFT_CODES = new Set([
-  "D1", "D2",
-  "MIDA", "MIDB",
-  "E", "N",
-  "FT AM", "FT PM", "FT W",
-  "C", "A10"
-]);
-
-export const OFF_CODES = new Set(["X", "L", "LH"]);
-
-// ---------------------------------------------------------------------------
-// PARSE CONSTRAINT CODES  (Option A + Option 2 behavior)
-// ---------------------------------------------------------------------------
-
-/**
- * Converts a constraint cell like:
- *   1/2/x
- *   1/2
- *   5/10/x
- *   am
- *   pmx
- *
- * Into normalized shift code list. OFF is always allowed (Option 2).
- */
-function parseConstraintCode(value: string): string[] | null {
-  if (!value) return null;
-
-  const lower = value.toLowerCase().trim();
-
-  if (!lower.includes("/") && !["1","2","5","10","10p","am","pm","w","wk","ftw"].includes(lower)) {
-    // not a constraint code
-    return null;
-  }
-
-  const parts = lower.split("/");
-
-  const out: string[] = [];
-
-  for (let part of parts) {
-    part = part.replace(/x$/i, "").trim(); // remove trailing x
-
-    if (part === "1") out.push("D1");
-    else if (part === "2") out.push("D2");
-    else if (part === "5") out.push("E");
-    else if (part === "10" || part === "10p") out.push("N");
-    else if (part === "am") out.push("FT AM");
-    else if (part === "pm") out.push("FT PM");
-    else if (["w","wk","ftw"].includes(part)) out.push("FT W");
-  }
-
-  // Option 2: OFF is ALWAYS allowed, even without "/x"
-  out.push("OFF");
-
-  return out.length > 0 ? out : null;
+export interface ParsedDay {
+  date: string;          // YYYY-MM-DD
+  dayOfMonth: number;
+  dayOfWeek: number;     // 0=Sun..6=Sat
+  coverage: number;      // 6/7/8 (per-day cell)
+  ppLabel?: string;      // optional label from row 1 (PP1..PP14)
 }
 
-// ---------------------------------------------------------------------------
-// SAFE CELL VALUE EXTRACTOR
-// ---------------------------------------------------------------------------
+export interface ParsedProviderDay {
+  date: string;
+  rawValue: string;
+  locked: boolean;
+  assigned: ShiftCode | null;       // pre-assigned shift (locked)
+  offCode: string | null;           // L, HL, X, SL, TL, DP, TDY
+  constraint: ShiftCode[] | null;   // allowed shifts when constraint code present
+  offAllowedByConstraint: boolean;  // OFF token present in constraint
+}
 
-/**
- * Handles empty cells, styled cells with no value, etc.
- */
-function safeCellValue(cell: any): string {
+export interface ParsedProvider {
+  name: string;
+  weekend_quota: number;
+  night_quota: number;
+  target_shifts: number;            // adjusted target (rightmost col)
+  active: boolean;                  // false when target blank or DP/TL whole-month
+  days: ParsedProviderDay[];
+}
+
+export interface ParsedSchedule {
+  month: string;
+  monthIndex: number;               // 0-11
+  year: number;
+  daysInMonth: number;
+  base_coverage_value: number;      // mode of per-day coverage values
+  monday_ft_rule_active: boolean;
+  coverage_pattern: Record<string, number>;
+  days: ParsedDay[];
+  providers: ParsedProvider[];
+}
+
+function safeCell(cell: any): string {
   if (!cell) return "";
   if (cell.v === undefined || cell.v === null) return "";
-  // Normalize to uppercase for shift codes
-  return String(cell.v).trim().toUpperCase();
+  return String(cell.v).trim();
 }
 
-/**
- * Auto-corrects common typos in shift codes
- */
-function autoCorrectTypos(value: string): string {
-  if (!value) return value;
-  
-  const upper = value.toUpperCase().trim();
-  
-  // Common typo corrections
-  const corrections: Record<string, string> = {
-    "A": "A10",
-    "AM": "FT AM",
-    "PM": "FT PM",
-    "MID": "MIDA",
-    "MID1": "MIDA",
-    "MID2": "MIDB",
-    "FTW": "FT W",
-    "FTAM": "FT AM",
-    "FTPM": "FT PM"
-  };
-  
-  return corrections[upper] || value;
+function parseConstraintCode(raw: string): { allowed: ShiftCode[]; offAllowed: boolean } | null {
+  if (!raw) return null;
+  const lower = raw.toLowerCase().trim();
+  if (!lower.includes("/") && !["1","2","3","5","6","7","10","10p","am","pm","ft","w","wk","ftw","x"].includes(lower)) {
+    return null;
+  }
+  const parts = lower.split("/").map(p => p.trim());
+  const allowed: ShiftCode[] = [];
+  let offAllowed = false;
+  for (let p of parts) {
+    const cleaned = p.replace(/x$/i, "").trim();
+    if (p.endsWith("x") || p === "x") offAllowed = true;
+    if (cleaned === "") continue;
+    if (cleaned === "1") allowed.push("D1");
+    else if (cleaned === "2") allowed.push("D2");
+    else if (cleaned === "3") allowed.push("MIDA");
+    else if (cleaned === "5") allowed.push("E");
+    else if (cleaned === "6") allowed.push("MIDB");
+    else if (cleaned === "7" || cleaned === "10" || cleaned === "10p") allowed.push("N");
+    else if (cleaned === "am") allowed.push("FT AM");
+    else if (cleaned === "pm") allowed.push("FT PM");
+    else if (["ft","w","wk","ftw"].includes(cleaned)) { allowed.push("FT"); allowed.push("FT W"); }
+  }
+  // Always allow OFF on a constrained day per spec
+  offAllowed = true;
+  if (allowed.length === 0 && !offAllowed) return null;
+  return { allowed, offAllowed };
 }
 
-// ---------------------------------------------------------------------------
-// MAIN PARSER FUNCTION
-// ---------------------------------------------------------------------------
+function mode(values: number[]): number {
+  const counts = new Map<number, number>();
+  for (const v of values) counts.set(v, (counts.get(v) || 0) + 1);
+  let best = values[0] ?? 6;
+  let max = 0;
+  for (const [v, c] of counts) if (c > max) { max = c; best = v; }
+  return best;
+}
 
-export function parseSchedule(workbook: XLSX.WorkBook, providerProfiles?: any[]) {
-  console.log('parseSchedule called with workbook:', workbook);
-  console.log('Available sheet names:', workbook.SheetNames);
-  
-  // Try "Schedule" sheet first, then fall back to first sheet
-  let sheet = workbook.Sheets["Schedule"];
-  if (!sheet) {
-    const firstSheetName = workbook.SheetNames[0];
-    if (!firstSheetName) {
-      console.error('Workbook has no sheets!');
-      throw new Error("Workbook has no sheets.");
-    }
-    sheet = workbook.Sheets[firstSheetName];
-    console.log(`Using sheet: ${firstSheetName}`);
-  } else {
-    console.log('Using "Schedule" sheet');
-  }
-  
-  if (!sheet) {
-    console.error('Sheet is null or undefined');
-    throw new Error("Could not access sheet.");
-  }
-  
-  if (!sheet["!ref"]) {
-    console.error('Sheet has no cell range reference');
-    throw new Error("Sheet is empty.");
-  }
-  
+export function parseSchedule(workbook: XLSX.WorkBook): ParsedSchedule {
+  let sheet = workbook.Sheets["Schedule"] || workbook.Sheets[workbook.SheetNames[0]];
+  if (!sheet) throw new Error("Workbook has no sheets.");
+  if (!sheet["!ref"]) throw new Error("Sheet is empty.");
   const range = XLSX.utils.decode_range(sheet["!ref"]);
-  console.log('Sheet range:', range);
 
-  // --------------------------------------
-  // ROW DEFINITIONS
-  // Row 0: Month/PP
-  // Row 1: Coverage # (7/8)
-  // Row 2: Day
-  // Row 3: Date
-  // Row 4+: Providers
-  // --------------------------------------
-
-  // --------------------------------------
-  // Extract Month + Year
-  // --------------------------------------
-  const monthCell = safeCellValue(sheet["A1"]);
-  const match = monthCell.match(/([A-Za-z]+)\s+(\d{4})/);
-  if (!match) {
-    throw new Error("Invalid Month/Year format in A1.");
-  }
-
-  const monthName = match[1];
-  const year = Number(match[2]);
-
-  // Determine month index
+  // ----- Month / Year from A1 -----
+  const monthCell = safeCell(sheet["A1"]);
+  const m = monthCell.match(/([A-Za-z]+)\s+(\d{4})/);
+  if (!m) throw new Error(`Invalid Month/Year in A1 (got "${monthCell}"). Expected "Month YYYY".`);
+  const monthName = m[1];
+  const year = Number(m[2]);
   const monthIndex = new Date(`${monthName} 1, ${year}`).getMonth();
   const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
 
-  // --------------------------------------
-  // Build date strings + coverage pattern
-  // --------------------------------------
+  // ----- Day columns (row 4 = dates, row 2 = coverage, row 1 = PP labels) -----
+  // Row indices are 0-based: 0=row1 month/PP, 1=row2 coverage, 2=row3 day-of-week, 3=row4 date
+  const days: ParsedDay[] = [];
   const coverage_pattern: Record<string, number> = {};
-  const days: Array<{ date: string, pattern: number }> = [];
+  const dayCols: { col: number; date: string }[] = [];
 
-  for (let col = 3; col < 3 + daysInMonth; col++) {
-    const dateCell = safeCellValue(sheet[XLSX.utils.encode_cell({ r: 3, c: col })]);
-    if (!dateCell) continue;
+  for (let col = 2; col <= range.e.c; col++) {
+    const dateRaw = safeCell(sheet[XLSX.utils.encode_cell({ r: 3, c: col })]);
+    const dayNum = Number(dateRaw);
+    if (!Number.isFinite(dayNum) || dayNum < 1 || dayNum > 31) continue;
+    if (dayCols.length >= daysInMonth) break;
 
-    const dayNumber = Number(dateCell);
-    const fullDate = `${year}-${String(monthIndex + 1).padStart(2, "0")}-${String(dayNumber).padStart(2, "0")}`;
-
-    const patternCell = safeCellValue(sheet[XLSX.utils.encode_cell({ r: 1, c: col })]);
-    const pattern = Number(patternCell) || 7;
-
-    coverage_pattern[fullDate] = pattern;
+    const dateObj = new Date(year, monthIndex, dayNum);
+    const dateStr = `${year}-${String(monthIndex + 1).padStart(2,"0")}-${String(dayNum).padStart(2,"0")}`;
+    const covRaw = safeCell(sheet[XLSX.utils.encode_cell({ r: 1, c: col })]);
+    const cov = Number(covRaw);
+    const coverage = (cov === 6 || cov === 7 || cov === 8) ? cov : 6;
+    const ppLabel = safeCell(sheet[XLSX.utils.encode_cell({ r: 0, c: col })]) || undefined;
 
     days.push({
-      date: fullDate,
-      pattern
+      date: dateStr,
+      dayOfMonth: dayNum,
+      dayOfWeek: dateObj.getDay(),
+      coverage,
+      ppLabel,
     });
+    coverage_pattern[dateStr] = coverage;
+    dayCols.push({ col, date: dateStr });
   }
 
-  // --------------------------------------
-  // Parse Provider Rows
-  // --------------------------------------
-  const providers: any[] = [];
+  if (dayCols.length === 0) throw new Error("No day columns detected. Check row 4 contains date numbers.");
 
+  // ----- Determine rightmost target column (skip past last day column) -----
+  const lastDayCol = dayCols[dayCols.length - 1].col;
+  // Heuristic: rightmost non-empty header in row 4 area is the target column.
+  // Per spec the rightmost shift count column in the file is the adjusted target.
+  let targetCol = range.e.c;
+  if (targetCol <= lastDayCol) targetCol = lastDayCol + 1;
+
+  // ----- Provider rows (row 5 onward) -----
+  const providers: ParsedProvider[] = [];
   for (let row = 4; row <= range.e.r; row++) {
-    const nameCell = safeCellValue(sheet[XLSX.utils.encode_cell({ r: row, c: 0 })]);
-    if (!nameCell) continue;
+    const nameRaw = safeCell(sheet[XLSX.utils.encode_cell({ r: row, c: 0 })]);
+    if (!nameRaw) continue;
+    // Filter summary/total rows
+    if (SUMMARY_ROW_MARKERS.has(nameRaw.toUpperCase())) continue;
 
-    const weekendQuotaCell = safeCellValue(sheet[XLSX.utils.encode_cell({ r: row, c: 1 })]);
+    const weekendQuotaCell = safeCell(sheet[XLSX.utils.encode_cell({ r: row, c: 1 })]);
     const weekend_quota = Number(weekendQuotaCell) || 0;
 
-    const nightQuotaCell = safeCellValue(sheet[XLSX.utils.encode_cell({ r: row, c: 2 })]);
-    const night_quota = Number(nightQuotaCell) || 0;
+    const targetRaw = safeCell(sheet[XLSX.utils.encode_cell({ r: row, c: targetCol })]);
+    const target_shifts = Number(targetRaw) || 0;
+    const targetBlank = targetRaw === "";
 
-    const targetShiftsCell = safeCellValue(sheet[XLSX.utils.encode_cell({ r: row, c: range.e.c })]);
-    const target_shifts = Number(targetShiftsCell) || 0;
+    const providerDays: ParsedProviderDay[] = [];
+    let nightQuota = 0;
+    let wholeMonthOff = false;
 
-    const providerDays: any[] = [];
-
-    // --------------------------------------
-    // Parse daily cells
-    // --------------------------------------
-    for (let i = 0; i < days.length; i++) {
-      const col = 3 + i;
-      const date = days[i].date;
-
-      const cellRef = XLSX.utils.encode_cell({ r: row, c: col });
-      let raw = safeCellValue(sheet[cellRef]);
-      
-      // Auto-correct common typos
-      raw = autoCorrectTypos(raw);
-
+    for (const { col, date } of dayCols) {
+      const raw = safeCell(sheet[XLSX.utils.encode_cell({ r: row, c: col })]);
+      const upper = raw.toUpperCase();
       let locked = false;
-      let assigned: string | null = null;
-      let constraint: string[] | null = null;
+      let assigned: ShiftCode | null = null;
+      let offCode: string | null = null;
+      let constraint: ShiftCode[] | null = null;
+      let offAllowedByConstraint = false;
 
-      // Standalone X means OFF
-      if (raw === "X") {
+      if (upper && OFF_CODES.has(upper)) {
         locked = true;
-        assigned = "OFF";
-      }
-      // OFF block?
-      else if (OFF_CODES.has(raw)) {
+        offCode = upper;
+        if (WHOLE_MONTH_OFF.has(upper)) wholeMonthOff = true;
+      } else if (upper === "C") {
         locked = true;
-        assigned = "OFF";
-      }
-      // Preassigned shift?
-      else if (SHIFT_CODES.has(raw)) {
+        assigned = "C";
+      } else if (upper === "A" || upper === "A10") {
         locked = true;
-        assigned = raw;
-      }
-      // Constraint code?
-      else {
-        const parsed = parseConstraintCode(raw);
-        if (parsed) {
-          locked = false;
-          constraint = parsed;   // overrides rules
+        assigned = "A10";
+      } else {
+        const norm = normalizeShiftToken(upper);
+        if (norm) {
+          locked = true;
+          assigned = norm;
+          if (norm === "N") nightQuota += 1;
+        } else {
+          const c = parseConstraintCode(raw);
+          if (c) {
+            constraint = c.allowed;
+            offAllowedByConstraint = c.offAllowed;
+          }
         }
       }
 
       providerDays.push({
         date,
+        rawValue: raw,
         locked,
         assigned,
+        offCode,
         constraint,
-        value: raw
+        offAllowedByConstraint,
       });
     }
 
     providers.push({
-      name: nameCell,
+      name: nameRaw,
       weekend_quota,
-      night_quota,
+      night_quota: nightQuota, // recomputed later from solver output if needed
       target_shifts,
-      days: providerDays
+      active: !targetBlank && target_shifts > 0 && !wholeMonthOff,
+      days: providerDays,
     });
   }
 
+  // base coverage = mode of per-day coverage
+  const base_coverage_value = mode(days.map(d => d.coverage));
+  const monday_ft_rule_active = base_coverage_value === 6;
+
   return {
     month: monthName,
+    monthIndex,
     year,
+    daysInMonth,
+    base_coverage_value,
+    monday_ft_rule_active,
     coverage_pattern,
-    providers
+    days,
+    providers,
   };
 }
