@@ -7,8 +7,7 @@ import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { Loader2, Sparkles, Calendar, Download, Trash2, ArrowLeft, FileSpreadsheet, Eye } from 'lucide-react';
 import { ScheduleUpload } from '@/components/ScheduleUpload';
-import { ScheduleCalendar } from '@/components/ScheduleCalendar';
-import { ProviderStats } from '@/components/ProviderStats';
+import { ScheduleWorkbench } from '@/components/build/ScheduleWorkbench';
 import { exportScheduleToExcel } from '@/lib/scheduleExporterExcel';
 import {
   AlertDialog,
@@ -39,91 +38,6 @@ export default function GenerateSchedule() {
 
   // Convert month name to 1-12 number for ScheduleUpload
   const selectedMonthNumber = MONTHS.indexOf(month) + 1;
-
-  const handleGenerate = async () => {
-    try {
-      setGenerating(true);
-      
-      // Fetch all provider profiles with constraints
-      const { data: providers, error: providersError } = await supabase
-        .from('providers')
-        .select(`
-          *,
-          provider_constraints (*)
-        `)
-        .eq('active', true);
-
-      if (providersError) throw providersError;
-      if (!providers || providers.length === 0) {
-        throw new Error('No active providers found. Please add providers first.');
-      }
-
-      // Transform provider profiles to expected payload
-      const provider_profiles = providers.map((p: any) => {
-        const c = Array.isArray(p.provider_constraints) ? p.provider_constraints[0] : p.provider_constraints;
-        const [first_name, ...rest] = (p.name || '').split(' ');
-        return {
-          first_name: first_name || '',
-          last_name: rest.join(' '),
-          email: p.email || '',
-          role: 'provider',
-          allowed_shifts: c?.allowed_shifts || [],
-          rules: {
-            disallowed_shifts: c?.disallowed_shifts || [],
-            preferred_shifts: c?.preferred_shifts || [],
-            rest_hours: c?.rest_hours ?? 12,
-            n_recovery_days: c?.n_recovery_days ?? 2,
-            block_pattern: c?.block_pattern || null,
-            max_consecutive_N: c?.max_consecutive_n || null,
-            saturday_restrictions: c?.saturday_restrictions || null,
-            sunday_restrictions: c?.sunday_restrictions || null,
-          }
-        };
-      });
-
-      console.log('Calling generate-schedule edge function...');
-
-      if (!uploadedFileBase64) {
-        throw new Error('Please upload an Excel schedule file first.');
-      }
-
-      const { data, error } = await supabase.functions.invoke('generate-schedule-v2', {
-        body: {
-          file: uploadedFileBase64
-        }
-      });
-
-      if (error) {
-        if (error.message?.includes('429')) {
-          throw new Error('Rate limit exceeded. Please wait a moment and try again.');
-        }
-        if (error.message?.includes('402')) {
-          throw new Error('AI credits exhausted. Please add credits to your workspace.');
-        }
-        if (error.message?.includes('Locked cell violation') || error.message?.includes('422')) {
-          throw new Error('Locked cell violation: the AI attempted to overwrite protected cells from the uploaded sheet.');
-        }
-        throw error;
-      }
-
-      console.log('Schedule generated:', data);
-      setGeneratedSchedule(data);
-
-      toast({
-        title: 'Schedule Generated!',
-        description: `Successfully created schedule for ${month} ${year}`,
-      });
-    } catch (error: any) {
-      console.error('Error generating schedule:', error);
-      toast({
-        title: 'Generation Failed',
-        description: error.message || 'Failed to generate schedule',
-        variant: 'destructive',
-      });
-    } finally {
-      setGenerating(false);
-    }
-  };
 
   const handleSaveSchedule = async () => {
     if (!generatedSchedule) return;
