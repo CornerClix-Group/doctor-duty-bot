@@ -8,6 +8,8 @@ import { supabase } from '@/integrations/supabase/client';
 import { Download, Trash2, ArrowLeft, FileSpreadsheet, Eye, Sparkles } from 'lucide-react';
 import { ScheduleUpload } from '@/components/ScheduleUpload';
 import { ScheduleWorkbench } from '@/components/build/ScheduleWorkbench';
+import { EditTab } from '@/components/edit/EditTab';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { exportScheduleToExcel } from '@/lib/scheduleExporterExcel';
 import {
   AlertDialog,
@@ -334,14 +336,32 @@ export default function GenerateSchedule() {
           </CardContent>
         </Card>
 
-        <ScheduleWorkbench
-          month={month}
-          year={year}
-          uploadedFileBase64={uploadedFileBase64}
-          uploadedData={uploadedData}
-          onScheduleGenerated={setGeneratedSchedule}
-          generatedSchedule={generatedSchedule}
-        />
+        <Tabs defaultValue="build">
+          <TabsList className="grid grid-cols-2 w-full max-w-sm">
+            <TabsTrigger value="build">Build</TabsTrigger>
+            <TabsTrigger value="edit" disabled={!generatedSchedule}>
+              Edit
+            </TabsTrigger>
+          </TabsList>
+          <TabsContent value="build" className="pt-4">
+            <ScheduleWorkbench
+              month={month}
+              year={year}
+              uploadedFileBase64={uploadedFileBase64}
+              uploadedData={uploadedData}
+              onScheduleGenerated={setGeneratedSchedule}
+              generatedSchedule={generatedSchedule}
+            />
+          </TabsContent>
+          <TabsContent value="edit" className="pt-4">
+            <EditTab
+              month={month}
+              year={year}
+              generatedSchedule={generatedSchedule}
+              onScheduleChange={setGeneratedSchedule}
+            />
+          </TabsContent>
+        </Tabs>
 
         {generatedSchedule && (
           <div className="flex flex-wrap gap-3">
