@@ -5,10 +5,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
-import { Download, Trash2, ArrowLeft, FileSpreadsheet, Eye, Sparkles } from 'lucide-react';
+import { Download, Trash2, ArrowLeft, FileSpreadsheet, Sparkles } from 'lucide-react';
 import { ScheduleUpload } from '@/components/ScheduleUpload';
 import { ScheduleWorkbench } from '@/components/build/ScheduleWorkbench';
 import { EditTab } from '@/components/edit/EditTab';
+import { PublishPanel } from '@/components/publish/PublishPanel';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { exportScheduleToExcel } from '@/lib/scheduleExporterExcel';
 import {
@@ -149,61 +150,6 @@ export default function GenerateSchedule() {
       console.error('Error exporting schedule:', error);
       toast({
         title: 'Export Failed',
-        description: error.message,
-        variant: 'destructive',
-      });
-    }
-  };
-
-  const handlePublishSchedule = async () => {
-    try {
-      if (!generatedSchedule) return;
-
-      // First check if schedule already exists
-      const { data: existing, error: fetchError } = await supabase
-        .from('schedules')
-        .select('id')
-        .eq('month', month)
-        .eq('year', year)
-        .maybeSingle();
-
-      if (fetchError) throw fetchError;
-
-      if (existing) {
-        // Update existing schedule to published
-        const { error } = await supabase
-          .from('schedules')
-          .update({ 
-            schedule_data: generatedSchedule.schedule || [],
-            provider_totals: generatedSchedule.provider_totals || {},
-            status: 'published',
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', existing.id);
-
-        if (error) throw error;
-      } else {
-        // Create new schedule as published
-        const { error } = await supabase.from('schedules').insert({
-          month,
-          year,
-          schedule_data: generatedSchedule.schedule || [],
-          provider_totals: generatedSchedule.provider_totals || {},
-          created_by: (await supabase.auth.getUser()).data.user?.id,
-          status: 'published'
-        });
-
-        if (error) throw error;
-      }
-
-      toast({
-        title: 'Schedule Published',
-        description: 'Schedule is now visible to all providers',
-      });
-    } catch (error: any) {
-      console.error('Error publishing schedule:', error);
-      toast({
-        title: 'Publish Failed',
         description: error.message,
         variant: 'destructive',
       });
@@ -364,17 +310,16 @@ export default function GenerateSchedule() {
         </Tabs>
 
         {generatedSchedule && (
+          <PublishPanel
+            month={month}
+            year={year}
+            generatedSchedule={generatedSchedule}
+          />
+        )}
+
+        {generatedSchedule && (
           <div className="flex flex-wrap gap-3">
             <>
-              <Button
-                onClick={handlePublishSchedule}
-                variant="default"
-                size="lg"
-              >
-                <Eye className="mr-2 h-5 w-5" />
-                Publish Schedule
-              </Button>
-
               <Button
                 onClick={handleExportExcel}
                 variant="secondary"
