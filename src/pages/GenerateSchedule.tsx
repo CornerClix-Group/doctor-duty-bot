@@ -11,7 +11,7 @@ import { ScheduleWorkbench } from '@/components/build/ScheduleWorkbench';
 import { EditTab } from '@/components/edit/EditTab';
 import { PublishPanel } from '@/components/publish/PublishPanel';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { exportScheduleToExcel } from '@/lib/scheduleExporterExcel';
 import {
   AlertDialog,
@@ -290,44 +290,35 @@ export default function GenerateSchedule() {
               Edit
             </TabsTrigger>
           </TabsList>
-          <TabsContent value="build" className="pt-4" forceMount>
-            <AnimatePresence mode="wait">
-              <motion.div
-                key="build"
-                initial={{ opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -4 }}
-                transition={{ duration: 0.18, ease: [0.32, 0.72, 0, 1] }}
-                className="data-[state=inactive]:hidden"
-              >
-                <ScheduleWorkbench
+          <TabsContent value="build" className="pt-4">
+            <motion.div
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.18, ease: [0.32, 0.72, 0, 1] }}
+            >
+              <ScheduleWorkbench
                   month={month}
                   year={year}
                   uploadedFileBase64={uploadedFileBase64}
                   uploadedData={uploadedData}
                   onScheduleGenerated={setGeneratedSchedule}
                   generatedSchedule={generatedSchedule}
-                />
-              </motion.div>
-            </AnimatePresence>
+              />
+            </motion.div>
           </TabsContent>
-          <TabsContent value="edit" className="pt-4" forceMount>
-            <AnimatePresence mode="wait">
-              <motion.div
-                key="edit"
-                initial={{ opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -4 }}
-                transition={{ duration: 0.18, ease: [0.32, 0.72, 0, 1] }}
-              >
-                <EditTab
+          <TabsContent value="edit" className="pt-4">
+            <motion.div
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.18, ease: [0.32, 0.72, 0, 1] }}
+            >
+              <EditTab
                   month={month}
                   year={year}
                   generatedSchedule={generatedSchedule}
                   onScheduleChange={setGeneratedSchedule}
-                />
-              </motion.div>
-            </AnimatePresence>
+              />
+            </motion.div>
           </TabsContent>
         </Tabs>
 
