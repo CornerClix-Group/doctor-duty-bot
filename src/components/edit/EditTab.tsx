@@ -48,8 +48,8 @@ export function EditTab({ month, year, generatedSchedule, onScheduleChange }: Ed
       .eq("year", year)
       .maybeSingle();
     const payload = {
-      schedule_data: next,
-      assignments: next,
+      schedule_data: next as any,
+      assignments: next as any,
       status: "draft" as const,
       updated_at: new Date().toISOString(),
     };
