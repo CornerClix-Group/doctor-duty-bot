@@ -11,6 +11,7 @@ import { ScheduleWorkbench } from '@/components/build/ScheduleWorkbench';
 import { EditTab } from '@/components/edit/EditTab';
 import { PublishPanel } from '@/components/publish/PublishPanel';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { motion } from 'framer-motion';
 import { exportScheduleToExcel } from '@/lib/scheduleExporterExcel';
 import {
   AlertDialog,
@@ -290,22 +291,34 @@ export default function GenerateSchedule() {
             </TabsTrigger>
           </TabsList>
           <TabsContent value="build" className="pt-4">
-            <ScheduleWorkbench
-              month={month}
-              year={year}
-              uploadedFileBase64={uploadedFileBase64}
-              uploadedData={uploadedData}
-              onScheduleGenerated={setGeneratedSchedule}
-              generatedSchedule={generatedSchedule}
-            />
+            <motion.div
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.18, ease: [0.32, 0.72, 0, 1] }}
+            >
+              <ScheduleWorkbench
+                  month={month}
+                  year={year}
+                  uploadedFileBase64={uploadedFileBase64}
+                  uploadedData={uploadedData}
+                  onScheduleGenerated={setGeneratedSchedule}
+                  generatedSchedule={generatedSchedule}
+              />
+            </motion.div>
           </TabsContent>
           <TabsContent value="edit" className="pt-4">
-            <EditTab
-              month={month}
-              year={year}
-              generatedSchedule={generatedSchedule}
-              onScheduleChange={setGeneratedSchedule}
-            />
+            <motion.div
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.18, ease: [0.32, 0.72, 0, 1] }}
+            >
+              <EditTab
+                  month={month}
+                  year={year}
+                  generatedSchedule={generatedSchedule}
+                  onScheduleChange={setGeneratedSchedule}
+              />
+            </motion.div>
           </TabsContent>
         </Tabs>
 

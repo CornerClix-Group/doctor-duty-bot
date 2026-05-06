@@ -32,7 +32,7 @@ const Auth = () => {
       // Invitation flow - switch to signup mode
       setIsLogin(false);
       toast({
-        title: "Welcome to ShiftPro!",
+        title: "Welcome to Shiftly!",
         description: "Please create your account to accept the invitation.",
       });
     }
@@ -157,8 +157,8 @@ const Auth = () => {
             </div>
           </div>
           
-          <h1 className="text-6xl font-bold text-white tracking-tight">
-            ShiftPro
+          <h1 className="text-6xl font-semibold text-white tracking-tight">
+            Shiftly
           </h1>
           
           <p className="text-lg text-gray-400">

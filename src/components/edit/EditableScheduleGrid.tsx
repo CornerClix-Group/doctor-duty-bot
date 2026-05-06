@@ -145,6 +145,29 @@ export function EditableScheduleGrid({
     return dt === 0 || dt === 6;
   };
 
+  const isToday = (s: string) => {
+    const today = new Date();
+    const [y, m, d] = s.split("-").map(Number);
+    return today.getFullYear() === y && today.getMonth() + 1 === m && today.getDate() === d;
+  };
+
+  const shiftAccent = (shift: string): string => {
+    const map: Record<string, string> = {
+      D1: "var(--shift-d1)",
+      D2: "var(--shift-d2)",
+      MIDA: "var(--shift-mida)",
+      MIDB: "var(--shift-midb)",
+      E: "var(--shift-e)",
+      N: "var(--shift-n)",
+      FT: "var(--shift-ft)",
+      "FT W": "var(--shift-ft)",
+      "FT W12": "var(--shift-ft)",
+      "FT AM": "var(--shift-ft)",
+      "FT PM": "var(--shift-ft)",
+    };
+    return map[shift] || "var(--muted-foreground)";
+  };
+
   if (!schedule || schedule.length === 0) {
     return (
       <Card>
@@ -156,11 +179,11 @@ export function EditableScheduleGrid({
   }
 
   return (
-    <Card>
-      <CardHeader>
+    <Card className="border-border/60 shadow-[var(--shadow-card)]">
+      <CardHeader className="border-b border-border/60">
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div>
-            <CardTitle>Editable Calendar</CardTitle>
+            <CardTitle className="tracking-tight">Editable Calendar</CardTitle>
             <CardDescription>
               Click any cell to reassign. Rule violations highlight in real time.
             </CardDescription>
@@ -201,38 +224,55 @@ export function EditableScheduleGrid({
           </div>
         </div>
       </CardHeader>
-      <CardContent>
+      <CardContent className="p-0">
         <TooltipProvider delayDuration={150}>
-          <ScrollArea className="h-[560px] w-full rounded-md border">
-            <table className="w-full border-collapse text-sm">
-              <thead className="sticky top-0 z-10 bg-background">
+          <ScrollArea className="h-[600px] w-full">
+            <table className="w-full border-separate border-spacing-0 text-sm">
+              <thead className="sticky top-0 z-20">
                 <tr>
-                  <th className="border bg-muted p-2 text-left font-semibold sticky left-0">
+                  <th className="glass sticky left-0 z-30 border-b border-r border-border/60 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                     Date
                   </th>
                   {shiftColumns.map((s) => (
-                    <th key={s} className="border bg-muted p-2 text-center font-semibold min-w-[140px]">
-                      {s}
+                    <th
+                      key={s}
+                      className="glass border-b border-r border-border/60 px-3 py-3 text-center text-xs font-semibold uppercase tracking-wider text-muted-foreground min-w-[132px]"
+                    >
+                      <div className="inline-flex items-center gap-1.5">
+                        <span
+                          className="h-1.5 w-1.5 rounded-full"
+                          style={{ background: `hsl(${shiftAccent(s)})` }}
+                        />
+                        {s}
+                      </div>
                     </th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {schedule.map((day, idx) => (
-                  <tr
-                    key={day.date}
-                    className={`${idx % 2 ? "bg-muted/20" : "bg-background"} ${
-                      isWeekend(day.date) ? "bg-accent/10" : ""
-                    }`}
-                  >
-                    <td className="border p-2 font-medium whitespace-nowrap sticky left-0 bg-inherit">
-                      {formatDate(day.date)}
+                {schedule.map((day) => {
+                  const today = isToday(day.date);
+                  const weekend = isWeekend(day.date);
+                  const rowBg = today
+                    ? "bg-[hsl(var(--today-tint))]"
+                    : weekend
+                    ? "bg-[hsl(var(--weekend-tint))]"
+                    : "bg-card";
+                  return (
+                  <tr key={day.date} className={`${rowBg} group/row transition-colors hover:bg-[hsl(var(--primary-soft))]`}>
+                    <td className={`sticky left-0 z-10 ${rowBg} border-b border-r border-border/60 px-4 py-2.5 font-medium tabular whitespace-nowrap`}>
+                      <div className="flex items-center gap-2">
+                        {today && <span className="h-1.5 w-1.5 rounded-full bg-primary shadow-[var(--shadow-glow)]" />}
+                        <span className={today ? "text-primary" : weekend ? "text-foreground/80" : ""}>
+                          {formatDate(day.date)}
+                        </span>
+                      </div>
                     </td>
                     {shiftColumns.map((shift) => {
                       const a = day.assignments.find((x) => x.shift === shift);
                       if (!a) {
                         return (
-                          <td key={shift} className="border p-1 text-center text-muted-foreground/40">
+                          <td key={shift} className="border-b border-r border-border/60 px-2 py-1.5 text-center text-muted-foreground/30">
                             ·
                           </td>
                         );
@@ -241,16 +281,16 @@ export function EditableScheduleGrid({
                       const hasError = cellIssues.some((i) => i.severity === "error");
                       const hasWarn = cellIssues.some((i) => i.severity === "warning");
                       const cellTone = hasError
-                        ? "ring-1 ring-destructive bg-destructive/10"
+                        ? "ring-1 ring-destructive/70 bg-destructive/5"
                         : hasWarn
-                        ? "ring-1 ring-amber-500/60 bg-amber-500/10"
-                        : "";
+                        ? "ring-1 ring-amber-500/50 bg-amber-500/5"
+                        : "border-border/60";
                       const select = (
                         <Select
                           value={a.provider || UNFILLED}
                           onValueChange={(v) => handleEdit(day.date, shift, v)}
                         >
-                          <SelectTrigger className={`h-8 w-full ${cellTone}`}>
+                          <SelectTrigger className={`h-8 w-full rounded-md border-transparent bg-transparent text-xs font-medium tabular hover:bg-background focus:bg-background ${cellTone}`}>
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
@@ -262,7 +302,7 @@ export function EditableScheduleGrid({
                         </Select>
                       );
                       return (
-                        <td key={shift} className="border p-1 align-middle">
+                        <td key={shift} className="border-b border-r border-border/60 px-1.5 py-1 align-middle">
                           {cellIssues.length === 0 ? (
                             select
                           ) : (
@@ -297,7 +337,8 @@ export function EditableScheduleGrid({
                       );
                     })}
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </ScrollArea>

@@ -24,7 +24,7 @@ export default function Broadcast() {
   const [subject, setSubject] = useState('');
   const [message, setMessage] = useState('');
   const [fromEmail, setFromEmail] = useState('onboarding@resend.dev');
-  const [fromName, setFromName] = useState('ShiftPro Team');
+  const [fromName, setFromName] = useState('Shiftly Team');
   const [sending, setSending] = useState(false);
 
   useEffect(() => {
@@ -203,7 +203,7 @@ export default function Broadcast() {
                     id="fromName"
                     value={fromName}
                     onChange={(e) => setFromName(e.target.value)}
-                    placeholder="ShiftPro Team"
+                    placeholder="Shiftly Team"
                   />
                 </div>
                 <div className="space-y-2">
@@ -242,7 +242,7 @@ export default function Broadcast() {
                   id="message"
                   value={message}
                   onChange={(e) => setMessage(e.target.value)}
-                  placeholder="The January 2026 schedule is now available in ShiftPro..."
+                  placeholder="The January 2026 schedule is now available in Shiftly..."
                   rows={8}
                 />
                 <p className="text-xs text-muted-foreground">

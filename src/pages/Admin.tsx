@@ -99,7 +99,7 @@ const Admin = () => {
                   Admin Dashboard
                 </h1>
                 <p className="text-sm text-muted-foreground">
-                  Master control center for ShiftPro
+                  Master control center for Shiftly
                 </p>
               </div>
             </div>

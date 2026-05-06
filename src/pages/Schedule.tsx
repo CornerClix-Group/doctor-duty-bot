@@ -125,7 +125,7 @@ const Schedule = () => {
               </div>
               <div>
               <h1 className="text-3xl font-bold text-foreground">
-                ShiftPro Schedule
+                Shiftly Schedule
               </h1>
                 <p className="text-sm text-muted-foreground">
                   {!scheduleData && 'Upload your schedule template'}
