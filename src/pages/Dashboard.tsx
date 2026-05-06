@@ -177,11 +177,11 @@ const Dashboard = () => {
                   <Activity className="h-8 w-8 text-white" />
                 </div>
                 <div>
-                  <h1 className="text-3xl font-bold text-foreground">
-                    ShiftPro
+                  <h1 className="text-3xl font-semibold tracking-tight text-foreground">
+                    Shiftly
                   </h1>
                   <p className="text-sm text-muted-foreground">
-                    Intelligent Physician Scheduling Platform
+                    Effortless physician scheduling
                   </p>
                 </div>
               </div>
