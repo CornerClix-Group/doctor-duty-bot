@@ -18,7 +18,7 @@ serve(async (req) => {
       throw new Error("LOVABLE_API_KEY is not configured");
     }
 
-    const systemPrompt = `You are an email-orchestration assistant for the Shift Pro admin. 
+    const systemPrompt = `You are an email-orchestration assistant for the EMSchedule admin. 
 You will produce a ready-to-send email payload list for a broadcast.
 
 TASK:
@@ -27,7 +27,7 @@ TASK:
 3) Render message_markdown unchanged as the main body.
 4) Include a standard footer:
    - "Reply to this email if you have questions."
-   - "You can view and export your schedule in Shift Pro → My Schedule."
+   - "You can view and export your schedule in EMSchedule → My Schedule."
 5) Return ONLY JSON: { "emails": [ { "to": "...", "subject": "...", "html": "..." } ] }
 
 FORMAT RULES:

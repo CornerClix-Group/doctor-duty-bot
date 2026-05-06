@@ -178,7 +178,7 @@ const Dashboard = () => {
                 </div>
                 <div>
                   <h1 className="text-3xl font-semibold tracking-tight text-foreground">
-                    Shiftly
+                    EMSchedule
                   </h1>
                   <p className="text-sm text-muted-foreground">
                     Effortless physician scheduling
