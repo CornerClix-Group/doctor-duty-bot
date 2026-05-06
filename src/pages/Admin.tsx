@@ -99,7 +99,7 @@ const Admin = () => {
                   Admin Dashboard
                 </h1>
                 <p className="text-sm text-muted-foreground">
-                  Master control center for Shiftly
+                  Master control center for EMSchedule
                 </p>
               </div>
             </div>

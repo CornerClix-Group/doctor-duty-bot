@@ -8,7 +8,7 @@ All colors MUST be HSL.
 
 @layer base {
   :root {
-    /* Shiftly — calm, clinical, confident.
+    /* EMSchedule — calm, clinical, confident.
        One primary (indigo), neutral surfaces, restrained accents. */
     --background: 220 20% 99%;
     --foreground: 222 25% 11%;

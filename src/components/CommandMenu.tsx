@@ -47,7 +47,7 @@ export function CommandMenu() {
 
   return (
     <CommandDialog open={open} onOpenChange={setOpen}>
-      <CommandInput placeholder="Search Shiftly… (try 'generate', 'providers', 'broadcast')" />
+      <CommandInput placeholder="Search EMSchedule… (try 'generate', 'providers', 'broadcast')" />
       <CommandList>
         <CommandEmpty>No matching action.</CommandEmpty>
         <CommandGroup heading="Navigate">

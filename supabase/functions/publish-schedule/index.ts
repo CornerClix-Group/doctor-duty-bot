@@ -123,11 +123,11 @@ serve(async (req) => {
                 <h2 style="color: #111;">${updated.month} ${updated.year} Schedule Published</h2>
                 <p>Hi ${p.first_name || "there"},</p>
                 <p>The ${updated.month} ${updated.year} schedule has been published and is ready to view.</p>
-                <p>Sign in to Shiftly to see your shifts.</p>
-                <p style="color: #666; font-size: 12px; margin-top: 32px;">— Shiftly Scheduling</p>
+                <p>Sign in to EMSchedule to see your shifts.</p>
+                <p style="color: #666; font-size: 12px; margin-top: 32px;">— EMSchedule Scheduling</p>
               </div>`;
             const { error } = await resend.emails.send({
-              from: "Shiftly <onboarding@resend.dev>",
+              from: "EMSchedule <onboarding@resend.dev>",
               to: [p.email],
               subject: `${updated.month} ${updated.year} schedule published`,
               html,
