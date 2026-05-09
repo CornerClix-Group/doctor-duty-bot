@@ -18,6 +18,7 @@ export function EditTab({ month, year, generatedSchedule, onScheduleChange }: Ed
   const { toast } = useToast();
   const [schedule, setSchedule] = useState<DayOutput[]>([]);
   const [original, setOriginal] = useState<DayOutput[]>([]);
+  const [scheduleId, setScheduleId] = useState<string | null>(null);
 
   // Normalize incoming generatedSchedule into DayOutput[]
   useEffect(() => {
@@ -27,6 +28,20 @@ export function EditTab({ month, year, generatedSchedule, onScheduleChange }: Ed
     setSchedule(sched);
     setOriginal(JSON.parse(JSON.stringify(sched)));
   }, [generatedSchedule]);
+
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase
+        .from("schedules")
+        .select("id")
+        .eq("month", month)
+        .eq("year", year)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      setScheduleId(data?.id ?? null);
+    })();
+  }, [month, year, generatedSchedule]);
 
   const handleChange = (next: DayOutput[]) => {
     setSchedule(next);
@@ -56,14 +71,20 @@ export function EditTab({ month, year, generatedSchedule, onScheduleChange }: Ed
     if (existing) {
       const { error } = await supabase.from("schedules").update(payload).eq("id", existing.id);
       if (error) throw error;
+      setScheduleId(existing.id);
     } else {
-      const { error } = await supabase.from("schedules").insert({
-        month,
-        year,
-        ...payload,
-        created_by: (await supabase.auth.getUser()).data.user?.id,
-      });
+      const { data: ins, error } = await supabase
+        .from("schedules")
+        .insert({
+          month,
+          year,
+          ...payload,
+          created_by: (await supabase.auth.getUser()).data.user?.id,
+        })
+        .select("id")
+        .maybeSingle();
       if (error) throw error;
+      if (ins?.id) setScheduleId(ins.id);
     }
   };
 
@@ -78,6 +99,7 @@ export function EditTab({ month, year, generatedSchedule, onScheduleChange }: Ed
         <EditableScheduleGrid
           schedule={schedule}
           mondayFtRuleActive={!!generatedSchedule?.monday_ft_rule_active}
+          scheduleId={scheduleId}
           onChange={handleChange}
           onSaveDraft={handleSaveDraft}
           onReset={handleReset}
