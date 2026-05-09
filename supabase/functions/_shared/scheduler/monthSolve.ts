@@ -10,6 +10,7 @@ import {
   runPlacementLoop,
   verifyFinalHardRules,
   verifyGsEightyHours,
+  verifyNightBlocksPostPlacement,
   type SolverProviderDayCell,
   type SolverProviderRow,
 } from "../scheduleSolverCore.ts";
@@ -41,8 +42,13 @@ export function runMonthSolve(input: MonthSolveInput): MonthSolveResult {
     assignedByDate,
     providers,
     getCell,
-    profiles,
+    profiles: profilesRaw,
   } = input;
+
+  const profiles: Record<string, ProviderRuleProfile> = {};
+  for (const [k, v] of Object.entries(profilesRaw)) {
+    profiles[k.trim().toLowerCase()] = v;
+  }
 
   runPlacementLoop({
     dates,
@@ -60,6 +66,7 @@ export function runMonthSolve(input: MonthSolveInput): MonthSolveResult {
   applyLeaveCredits(dates, schedule, getCell, providers, profiles);
 
   violations.push(...verifyFinalHardRules(schedule, dates, providers));
+  violations.push(...verifyNightBlocksPostPlacement(schedule, dates, providers, profiles));
   violations.push(...verifyGsEightyHours(dates, schedule, providers, profiles));
 
   const softScores = computeSoftScoresFull(schedule, dates, providers);

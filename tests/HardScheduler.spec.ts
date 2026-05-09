@@ -191,9 +191,13 @@ describe("HardScheduler monthSolve smoke", () => {
     const names = ["P1", "P2", "P3", "P4", "P5", "P6"];
     const sch = new HardScheduler();
     sch.setMondayFtRuleActive(false);
-    const profs: Record<string, object> = {};
-    names.forEach((n) => { profs[n.toLowerCase()] = {}; });
-    sch.setProviderRuleProfiles(profs);
+    // Mixed-case keys: setProviderRuleProfiles normalizes to lowercase for lookup.
+    sch.setProviderRuleProfiles(
+      Object.fromEntries(names.map((n, i) => [i % 2 === 0 ? n : n.toLowerCase(), {}])) as Record<
+        string,
+        object
+      >,
+    );
     sch.loadProviders(names.map((name) => ({ name, active: true })));
     sch.setProviderDays(
       names.map((name) => ({

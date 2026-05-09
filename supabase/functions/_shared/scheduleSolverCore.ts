@@ -137,8 +137,17 @@ export function scoreProviderForSlotFixed(
       if (sh < sp) circFlip = 1;
     }
   }
+  /** Prefer continuing an in-progress night block (real roster stability). */
+  let nightBlockContinue = 0;
+  if (idx > 0 && isNightShiftToken(slot as string)) {
+    const prevShift = schedule[dates[idx - 1]]?.[name];
+    if (isNightShiftToken(prevShift)) {
+      nightBlockContinue = 750;
+    }
+  }
   return (
     1000 * extendStretch +
+    nightBlockContinue +
     500 * Math.min(nextOffLen, 14) -
     300 * circFlip -
     50 * clinical -
@@ -428,6 +437,45 @@ export function verifyFinalHardRules(
       });
     }
     out.push(...circadianRatchetViolations(schedule, name, dates));
+  }
+  return out;
+}
+
+/**
+ * After placement, every contiguous night run for night_only providers must sit in [min,max].
+ */
+export function verifyNightBlocksPostPlacement(
+  schedule: Record<string, Record<string, string | null>>,
+  dates: string[],
+  providers: SolverProviderRow[],
+  profiles: Record<string, ProviderRuleProfile>,
+): ScheduleViolation[] {
+  const out: ScheduleViolation[] = [];
+  for (const p of providers) {
+    const prof = profiles[p.name.trim().toLowerCase()];
+    if (!prof?.night_only) continue;
+    const minL = prof.night_block_min_length ?? 3;
+    const maxL = prof.night_block_max_length ?? 4;
+    const name = p.name;
+    let i = 0;
+    while (i < dates.length) {
+      if (!isNightShiftToken(schedule[dates[i]]?.[name])) {
+        i++;
+        continue;
+      }
+      let j = i;
+      while (j < dates.length && isNightShiftToken(schedule[dates[j]]?.[name])) j++;
+      const len = j - i;
+      if (len < minL || len > maxL) {
+        out.push({
+          type: "night_block_length",
+          provider: name,
+          date: dates[j - 1],
+          message: `Final night block length ${len} outside allowed ${minL}-${maxL} (ends ${dates[j - 1]})`,
+        });
+      }
+      i = j;
+    }
   }
   return out;
 }

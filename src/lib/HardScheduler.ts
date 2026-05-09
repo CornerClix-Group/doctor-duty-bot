@@ -66,7 +66,11 @@ export class HardScheduler {
   constructor() {}
 
   setProviderRuleProfiles(profiles: Record<string, SchedulerProviderProfile>) {
-    this.providerRuleProfiles = profiles;
+    const next: Record<string, SchedulerProviderProfile> = {};
+    for (const [k, v] of Object.entries(profiles)) {
+      next[k.trim().toLowerCase()] = v;
+    }
+    this.providerRuleProfiles = next;
   }
 
   getRuleProfile(providerName: string): SchedulerProviderProfile | undefined {
