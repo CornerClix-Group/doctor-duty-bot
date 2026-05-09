@@ -42,7 +42,16 @@ export function PublishPanel({ month, year, generatedSchedule, onStatusChange }:
   const [busy, setBusy] = useState<"lock" | "publish" | "unpublish" | null>(null);
   const [sendEmails, setSendEmails] = useState(true);
   const [manualOverrides, setManualOverrides] = useState<
-    { id: string; rule_violated: string; date: string; shift_assigned: string | null; rationale: string | null }[]
+    {
+      id: string;
+      rule_violated: string;
+      date: string;
+      shift_assigned: string | null;
+      rationale: string | null;
+      created_at: string | null;
+      created_by: string | null;
+      provider_profiles: { first_name: string; last_name: string } | null;
+    }[]
   >([]);
   const [overridesAcknowledged, setOverridesAcknowledged] = useState(false);
 
@@ -74,7 +83,9 @@ export function PublishPanel({ month, year, generatedSchedule, onStatusChange }:
       }
       const { data } = await supabase
         .from("schedule_overrides")
-        .select("id, rule_violated, date, shift_assigned, rationale")
+        .select(
+          "id, rule_violated, date, shift_assigned, rationale, created_at, created_by, provider_profiles(first_name, last_name)",
+        )
         .eq("schedule_id", scheduleRow.id)
         .order("date", { ascending: true });
       setManualOverrides((data as any) || []);
@@ -238,14 +249,26 @@ export function PublishPanel({ month, year, generatedSchedule, onStatusChange }:
                   <AlertTriangle className="h-4 w-4 text-amber-600" />
                   Manual overrides ({manualOverrides.length})
                 </div>
-                <ul className="text-xs space-y-1 text-muted-foreground max-h-32 overflow-y-auto">
-                  {manualOverrides.map((o) => (
-                    <li key={o.id}>
-                      <span className="font-medium text-foreground">{o.date}</span>: {o.rule_violated}
-                      {o.shift_assigned ? ` → ${o.shift_assigned}` : ""}
-                      {o.rationale ? ` — ${o.rationale}` : ""}
-                    </li>
-                  ))}
+                <ul className="text-xs space-y-2 text-muted-foreground max-h-48 overflow-y-auto">
+                  {manualOverrides.map((o) => {
+                    const pname = o.provider_profiles
+                      ? `${o.provider_profiles.last_name}, ${o.provider_profiles.first_name}`
+                      : "(unknown provider)";
+                    return (
+                      <li key={o.id} className="border-b border-border/40 pb-2 last:border-0">
+                        <div className="font-medium text-foreground">
+                          {pname} · {o.date}
+                          {o.shift_assigned ? ` · ${o.shift_assigned}` : ""}
+                        </div>
+                        <div>Rule: {o.rule_violated}</div>
+                        <div>{o.rationale ? o.rationale : "(no rationale)"}</div>
+                        <div className="text-[10px] opacity-80">
+                          {o.created_at ? new Date(o.created_at).toLocaleString() : ""}
+                          {o.created_by ? ` · ${o.created_by.slice(0, 8)}…` : ""}
+                        </div>
+                      </li>
+                    );
+                  })}
                 </ul>
                 <div className="flex items-center gap-2">
                   <Checkbox
