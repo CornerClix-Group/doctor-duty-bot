@@ -11,6 +11,7 @@ import {
   canonicalShift,
   creditHours,
   requiredShiftsForDay,
+  toCanonicalShift,
 } from "../supabase/functions/_shared/shifts.ts";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -467,4 +468,50 @@ describe("scheduleParserCore (fixtures — skip when files absent)", () => {
       expect(chk.days.every((d) => d.date.length === 10)).toBe(true);
     });
   }
+
+  mayIt("May 2026 production: exactly 23 roster providers", () => {
+    const wb = XLSX.read(fs.readFileSync(mayFixture), { type: "buffer" });
+    expect(parseScheduleWorkbook(wb, XLSX).providers.length).toBe(23);
+  });
+
+  juneIt("June 2026 production: exactly 21 roster providers", () => {
+    const wb = XLSX.read(fs.readFileSync(juneFixture), { type: "buffer" });
+    expect(parseScheduleWorkbook(wb, XLSX).providers.length).toBe(21);
+  });
+
+  mayIt("May 2026 production: Lopez TL whole-month off", () => {
+    const wb = XLSX.read(fs.readFileSync(mayFixture), { type: "buffer" });
+    const p = parseScheduleWorkbook(wb, XLSX);
+    const lopez = p.providers.find((x) => x.name.toLowerCase().includes("lopez"));
+    expect(lopez).toBeDefined();
+    expect(lopez!.active).toBe(false);
+    expect(lopez!.days.filter((d) => d.offCode === "TL").length).toBeGreaterThan(p.days.length - 5);
+  });
+
+  mayIt("May 2026 production: Coffin 12 night shifts in grid", () => {
+    const wb = XLSX.read(fs.readFileSync(mayFixture), { type: "buffer" });
+    const p = parseScheduleWorkbook(wb, XLSX);
+    const c = p.providers.find((x) => x.name.toLowerCase().includes("coffin"));
+    expect(c).toBeDefined();
+    const nights = c!.days.filter((d) => d.assigned && toCanonicalShift(d.assigned!) === "N").length;
+    expect(nights).toBe(12);
+    expect(c!.night_quota).toBe(12);
+  });
+
+  juneIt("June 2026 fixture: every assigned shift maps to canonical catalog", () => {
+    const wb = XLSX.read(fs.readFileSync(juneFixture), { type: "buffer" });
+    const p = parseScheduleWorkbook(wb, XLSX);
+    for (const prov of p.providers) {
+      for (const d of prov.days) {
+        if (!d.assigned) continue;
+        expect(toCanonicalShift(d.assigned)).toBeTruthy();
+      }
+    }
+  });
+
+  juneIt("June 2026 fixture: per-day mode is set for every parsed day", () => {
+    const wb = XLSX.read(fs.readFileSync(juneFixture), { type: "buffer" });
+    const p = parseScheduleWorkbook(wb, XLSX);
+    expect(p.days.every((d) => d.mode === 6 || d.mode === 7 || d.mode === 8)).toBe(true);
+  });
 });

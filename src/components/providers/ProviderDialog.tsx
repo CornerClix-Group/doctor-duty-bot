@@ -167,7 +167,12 @@ export const ProviderDialog = ({ open, onOpenChange, provider, onSuccess }: Prov
         night_only: formData.night_only,
         evening_only: formData.evening_only,
         ft_or_mida_only: formData.ft_or_mida_only,
-        monthly_max_nights: formData.monthly_max_nights === '' ? null : parseInt(formData.monthly_max_nights, 10),
+        monthly_max_nights:
+          formData.monthly_max_nights === ""
+            ? null
+            : Number.isFinite(parseInt(formData.monthly_max_nights, 10))
+              ? parseInt(formData.monthly_max_nights, 10)
+              : null,
         night_block_min_length: formData.night_block_min_length,
         night_block_max_length: formData.night_block_max_length,
         nights_clean_days_after_block: formData.nights_clean_days_after_block,
