@@ -7,7 +7,7 @@ import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { Download, Trash2, ArrowLeft, FileSpreadsheet, Sparkles } from 'lucide-react';
 import { ScheduleUpload } from '@/components/ScheduleUpload';
-import { SchedulingEngine } from '@/components/SchedulingEngine';
+import { ScheduleWorkbench } from '@/components/ScheduleWorkbench';
 import { EditTab } from '@/components/edit/EditTab';
 import { PublishPanel } from '@/components/publish/PublishPanel';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -46,6 +46,7 @@ export default function GenerateSchedule() {
     return getNextMonthAndYear().year;
   });
   const [uploadedData, setUploadedData] = useState<any>(null);
+  const [uploadedFileBase64, setUploadedFileBase64] = useState<string | null>(null);
   const [generatedSchedule, setGeneratedSchedule] = useState<any>(null);
 
   // Convert month name to 1-12 number for ScheduleUpload
@@ -288,6 +289,7 @@ export default function GenerateSchedule() {
                       <AlertDialogAction 
                         onClick={() => {
                           setUploadedData(null);
+                          setUploadedFileBase64(null);
                           toast({
                             title: 'Upload Deleted',
                             description: 'The uploaded schedule has been removed',
@@ -306,7 +308,7 @@ export default function GenerateSchedule() {
           <CardContent>
             <ScheduleUpload 
               key={uploadedData ? 'uploaded' : 'empty'} 
-              onScheduleLoad={(data) => {
+              onScheduleLoad={(data, base64) => {
                 const nameRaw = String(data.month ?? '').trim();
                 const fileMonth =
                   MONTHS.find((m) => m.toLowerCase() === nameRaw.toLowerCase()) ?? nameRaw;
@@ -328,6 +330,7 @@ export default function GenerateSchedule() {
                   });
                 }
                 setUploadedData(data);
+                setUploadedFileBase64(base64 ?? null);
               }}
               selectedMonth={selectedMonthNumber}
               selectedYear={year}
@@ -359,9 +362,13 @@ export default function GenerateSchedule() {
               transition={{ duration: 0.18, ease: [0.32, 0.72, 0, 1] }}
             >
               {uploadedData ? (
-                <SchedulingEngine
-                  scheduleData={uploadedData}
+                <ScheduleWorkbench
+                  month={month}
+                  year={year}
+                  uploadedFileBase64={uploadedFileBase64}
+                  uploadedData={uploadedData}
                   onScheduleGenerated={setGeneratedSchedule}
+                  generatedSchedule={generatedSchedule}
                 />
               ) : (
                 <Card>
