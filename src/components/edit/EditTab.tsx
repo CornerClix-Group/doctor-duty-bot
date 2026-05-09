@@ -77,6 +77,7 @@ export function EditTab({ month, year, generatedSchedule, onScheduleChange }: Ed
       <TabsContent value="calendar" className="pt-4">
         <EditableScheduleGrid
           schedule={schedule}
+          mondayFtRuleActive={!!generatedSchedule?.monday_ft_rule_active}
           onChange={handleChange}
           onSaveDraft={handleSaveDraft}
           onReset={handleReset}

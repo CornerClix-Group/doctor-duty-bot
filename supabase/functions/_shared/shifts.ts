@@ -133,19 +133,40 @@ export function normalizeShiftToken(raw: string): ShiftCode | null {
   return toCanonicalShift(direct) ?? direct;
 }
 
+/** Per-day staffing mode: 6 / 7 / 8 shift slots (10-hr short, 10-hr + FT, or 9-hr). */
+export type DayMode = 6 | 7 | 8;
+
+export function coverageToDayMode(coverage: number): DayMode {
+  if (coverage === 6 || coverage === 7 || coverage === 8) return coverage;
+  return 8;
+}
+
+export function requiredShiftsForDay(
+  mode: DayMode,
+  dayOfWeek: number,
+  mondayFtRuleActive: boolean,
+): ShiftCode[] {
+  if (mode === 8) {
+    const base: ShiftCode[] = ["6a", "8a", "11a", "1p", "3p", "5p", "10p"];
+    if (dayOfWeek === 0 || dayOfWeek === 6) return [...base, "FT 9"];
+    if (dayOfWeek === 1 && mondayFtRuleActive) return [...base, "FT 7a"];
+    return base;
+  }
+  if (mode === 7) {
+    const base: ShiftCode[] = ["D1", "D2", "MIDA", "MIDB", "E", "N"];
+    if (dayOfWeek === 0 || dayOfWeek === 6) return [...base, "FT W"];
+    return [...base, "FT"];
+  }
+  return ["D1", "D2", "MIDA", "MIDB", "E", "N"];
+}
+
+/** @deprecated Prefer requiredShiftsForDay(day.mode, ...) when modes are inferred per column */
 export function requiredShifts(
   coverage: number,
   dayOfWeek: number,
   mondayFtRuleActive: boolean,
 ): ShiftCode[] {
-  const base: ShiftCode[] = ["D1", "D2", "MIDA", "MIDB", "E", "N"];
-  if (coverage === 6) {
-    if (dayOfWeek === 1 && mondayFtRuleActive) return [...base, "FT"];
-    return base;
-  }
-  if (coverage === 7) return [...base, "FT W"];
-  if (coverage === 8) return [...base, "FT AM", "FT PM"];
-  return base;
+  return requiredShiftsForDay(coverageToDayMode(coverage), dayOfWeek, mondayFtRuleActive);
 }
 
 export const TIGHTNESS_ORDER: ShiftCode[] = [

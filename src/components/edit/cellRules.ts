@@ -2,6 +2,8 @@
 // Mirrors a subset of the solver's eligibility rules so the user gets
 // instant feedback. Authoritative validation still runs server-side.
 
+export type DayMode = 6 | 7 | 8;
+
 export interface ProviderRule {
   name: string;
   active: boolean;
@@ -20,10 +22,16 @@ export interface ProviderRule {
 export interface DayAssignment {
   shift: string;
   provider: string;
+  locked?: boolean;
+  unfilled?: boolean;
 }
 export interface DayOutput {
   date: string; // YYYY-MM-DD
   dayOfWeek: number;
+  /** Staffing mode when present (from solver / parser); drives required slots */
+  mode?: DayMode;
+  coverage?: number;
+  required?: string[];
   assignments: DayAssignment[];
 }
 

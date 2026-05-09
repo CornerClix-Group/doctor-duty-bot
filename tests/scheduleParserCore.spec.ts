@@ -7,7 +7,11 @@ import {
   parseScheduleWorkbook,
   toClientLegacySchedule,
 } from "../supabase/functions/_shared/scheduleParserCore.ts";
-import { canonicalShift, creditHours } from "../supabase/functions/_shared/shifts.ts";
+import {
+  canonicalShift,
+  creditHours,
+  requiredShiftsForDay,
+} from "../supabase/functions/_shared/shifts.ts";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const fixturePath = (name: string) => path.join(__dirname, "fixtures", name);
@@ -167,6 +171,32 @@ describe("scheduleParserCore (synthetic)", () => {
     addProvider(rows, width, firstDayCol, "P", { [firstDayCol + 7]: "FT W9" }, 6);
     const p = parseScheduleWorkbook(bookFromAoA(rows), XLSX);
     expect(p.providers[0].days[7].assigned).toBe("FT 9");
+  });
+
+  it("infers mode 8 when a day column uses 9-hr lowercase codes", () => {
+    const { rows, width, firstDayCol } = gridMay31(3);
+    const col = firstDayCol + 2;
+    rows[1][col] = 8;
+    addProvider(rows, width, firstDayCol, "A", { [col]: "5p" }, 5);
+    addProvider(rows, width, firstDayCol, "B", { [col]: "6a" }, 5);
+    const p = parseScheduleWorkbook(bookFromAoA(rows), XLSX);
+    const d = p.days.find((x) => x.dayOfMonth === 3);
+    expect(d?.mode).toBe(8);
+  });
+
+  it("infers mode 6 when only six base slots appear and coverage is 6", () => {
+    const { rows, width, firstDayCol } = gridMay31(3);
+    const col = firstDayCol;
+    rows[1][col] = 6;
+    addProvider(rows, width, firstDayCol, "P1", { [col]: "D1" }, 5);
+    addProvider(rows, width, firstDayCol, "P2", { [col]: "D2" }, 5);
+    addProvider(rows, width, firstDayCol, "P3", { [col]: "MIDA" }, 5);
+    addProvider(rows, width, firstDayCol, "P4", { [col]: "MIDB" }, 5);
+    addProvider(rows, width, firstDayCol, "P5", { [col]: "E" }, 5);
+    addProvider(rows, width, firstDayCol, "P6", { [col]: "N" }, 5);
+    const p = parseScheduleWorkbook(bookFromAoA(rows), XLSX);
+    const d = p.days.find((x) => x.dayOfMonth === 1);
+    expect(d?.mode).toBe(6);
   });
 
   it("stops provider rows at TOTAL summary (production order)", () => {
@@ -349,6 +379,27 @@ describe("shared shifts catalog", () => {
 
   it("creditHours(FT PM) is 9 clock hours (regression)", () => {
     expect(creditHours("FT PM")).toBe(9);
+  });
+});
+
+describe("requiredShiftsForDay (mode)", () => {
+  it("mode 8 Mon without monday FT returns seven 9-hr base slots", () => {
+    expect(requiredShiftsForDay(8, 1, false)).toEqual(["6a", "8a", "11a", "1p", "3p", "5p", "10p"]);
+  });
+
+  it("mode 8 Mon with monday FT adds FT 7a", () => {
+    expect(requiredShiftsForDay(8, 1, true)).toEqual([
+      "6a", "8a", "11a", "1p", "3p", "5p", "10p", "FT 7a",
+    ]);
+  });
+
+  it("mode 7 Sat returns base + FT W", () => {
+    const r = requiredShiftsForDay(7, 6, false);
+    expect(r).toEqual(["D1", "D2", "MIDA", "MIDB", "E", "N", "FT W"]);
+  });
+
+  it("mode 6 returns six base slots only", () => {
+    expect(requiredShiftsForDay(6, 3, false)).toEqual(["D1", "D2", "MIDA", "MIDB", "E", "N"]);
   });
 });
 

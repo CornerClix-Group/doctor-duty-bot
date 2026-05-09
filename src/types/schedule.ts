@@ -1,3 +1,6 @@
+/** Shifts per day: 6 = short 10-hr, 7 = 10-hr + FT, 8 = 9-hr mode */
+export type DayMode = 6 | 7 | 8;
+
 export interface ProviderDay {
   date: string;
   locked: boolean;

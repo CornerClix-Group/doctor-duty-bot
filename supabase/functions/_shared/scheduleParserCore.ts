@@ -5,19 +5,25 @@
  */
 
 import {
+  type DayMode,
   type ShiftCode,
+  BASE_TEN_HOUR_SLOT_CODES,
+  NINE_HOUR_SHIFT_CODES,
+  coverageToDayMode,
   isNightCanonical,
   normalizeShiftToken,
 } from "./shifts.ts";
 
 // Re-export shift types for consumers that import parser core only
-export type { ShiftCode } from "./shifts.ts";
+export type { DayMode, ShiftCode } from "./shifts.ts";
 
 export interface ParsedDay {
   date: string;
   dayOfMonth: number;
   dayOfWeek: number;
   coverage: number;
+  /** Inferred staffing mode (6/7/8); drives required slot sets with requiredShiftsForDay */
+  mode: DayMode;
   ppLabel?: string;
 }
 
@@ -229,6 +235,31 @@ function mode(values: number[]): number {
   return best;
 }
 
+const FT_TEN_HOUR_LAYER_CODES = new Set<ShiftCode>([
+  "FT", "FT W", "FT W12", "FT AM", "FT PM", "FT 7a", "FT 2p", "FT 9", "FT W9",
+]);
+
+function inferDayMode(day: ParsedDay, providers: ParsedProvider[]): DayMode {
+  const codes = new Set<ShiftCode>();
+  let any9 = false;
+  for (const p of providers) {
+    const pd = p.days.find((x) => x.date === day.date);
+    if (!pd?.assigned) continue;
+    if (pd.assigned === "C" || pd.assigned === "A10") continue;
+    codes.add(pd.assigned);
+    if (NINE_HOUR_SHIFT_CODES.has(pd.assigned)) any9 = true;
+  }
+  if (codes.size === 0) return coverageToDayMode(day.coverage);
+  if (any9 || day.coverage === 8) return 8;
+  const sixBases: ShiftCode[] = ["D1", "D2", "MIDA", "MIDB", "E", "N"];
+  const hasAllSix = sixBases.every((b) => codes.has(b));
+  const hasFt = [...codes].some((c) => FT_TEN_HOUR_LAYER_CODES.has(c));
+  if (hasAllSix && hasFt) return 7;
+  if (day.coverage === 7) return 7;
+  if (day.coverage === 6 && !hasFt && [...codes].every((c) => BASE_TEN_HOUR_SLOT_CODES.has(c))) return 6;
+  return coverageToDayMode(day.coverage);
+}
+
 interface DateHeaderResult {
   dateRow: number;
   startCol: number;
@@ -307,6 +338,7 @@ export function parseScheduleWorkbook(workbook: { Sheets: Record<string, any>; S
       dayOfMonth: dayNum,
       dayOfWeek: dateObj.getDay(),
       coverage,
+      mode: 8,
       ppLabel,
     });
     coverage_pattern[dateStr] = coverage;
@@ -388,6 +420,10 @@ export function parseScheduleWorkbook(workbook: { Sheets: Record<string, any>; S
       active: !targetBlank && target_shifts > 0 && !wholeMonthOff,
       days: providerDays,
     });
+  }
+
+  for (const d of days) {
+    d.mode = inferDayMode(d, providers);
   }
 
   const base_coverage_value = mode(days.map((d) => d.coverage));
