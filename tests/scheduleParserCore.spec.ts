@@ -7,6 +7,7 @@ import {
   parseScheduleWorkbook,
   toClientLegacySchedule,
 } from "../supabase/functions/_shared/scheduleParserCore.ts";
+import { canonicalShift, creditHours } from "../supabase/functions/_shared/shifts.ts";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const fixturePath = (name: string) => path.join(__dirname, "fixtures", name);
@@ -138,6 +139,34 @@ describe("scheduleParserCore (synthetic)", () => {
     addProvider(rows, width, firstDayCol, "P", { [firstDayCol + 1]: "a" }, 6);
     const p = parseScheduleWorkbook(bookFromAoA(rows), XLSX);
     expect(p.providers[0].days[1].assigned).toBe("A10");
+  });
+
+  it("parses numeric night code 21 as canonical N", () => {
+    const { rows, width, firstDayCol } = gridMay31(3);
+    addProvider(rows, width, firstDayCol, "P", { [firstDayCol + 4]: 21 }, 6);
+    const p = parseScheduleWorkbook(bookFromAoA(rows), XLSX);
+    expect(p.providers[0].days[4].assigned).toBe("N");
+  });
+
+  it("parses lowercase 9-hr code 5p", () => {
+    const { rows, width, firstDayCol } = gridMay31(3);
+    addProvider(rows, width, firstDayCol, "P", { [firstDayCol + 5]: "5p" }, 6);
+    const p = parseScheduleWorkbook(bookFromAoA(rows), XLSX);
+    expect(p.providers[0].days[5].assigned).toBe("5p");
+  });
+
+  it("parses FT 7a as FT AM (canonical)", () => {
+    const { rows, width, firstDayCol } = gridMay31(3);
+    addProvider(rows, width, firstDayCol, "P", { [firstDayCol + 6]: "FT 7a" }, 6);
+    const p = parseScheduleWorkbook(bookFromAoA(rows), XLSX);
+    expect(p.providers[0].days[6].assigned).toBe("FT AM");
+  });
+
+  it("parses FT W9 as FT 9 (canonical)", () => {
+    const { rows, width, firstDayCol } = gridMay31(3);
+    addProvider(rows, width, firstDayCol, "P", { [firstDayCol + 7]: "FT W9" }, 6);
+    const p = parseScheduleWorkbook(bookFromAoA(rows), XLSX);
+    expect(p.providers[0].days[7].assigned).toBe("FT 9");
   });
 
   it("stops provider rows at TOTAL summary (production order)", () => {
@@ -306,6 +335,20 @@ describe("scheduleParserCore (synthetic)", () => {
     const ws = XLSX.utils.aoa_to_sheet([[null]]);
     XLSX.utils.book_append_sheet(wb, ws, "Schedule");
     expect(() => parseScheduleWorkbook(wb, XLSX)).toThrow(/No day header row|Invalid Month/);
+  });
+});
+
+describe("shared shifts catalog", () => {
+  it("canonicalShift maps 21 to N via alias", () => {
+    expect(canonicalShift("21")).toBe("N");
+  });
+
+  it("creditHours(C) is 10 credit hours", () => {
+    expect(creditHours("C")).toBe(10);
+  });
+
+  it("creditHours(FT PM) is 9 clock hours (regression)", () => {
+    expect(creditHours("FT PM")).toBe(9);
   });
 });
 

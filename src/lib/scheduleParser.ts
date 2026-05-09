@@ -4,14 +4,9 @@ import {
   parseScheduleWorkbook,
   toClientLegacySchedule,
 } from "../../supabase/functions/_shared/scheduleParserCore.ts";
+import { ALL_SHIFTS } from "../../supabase/functions/_shared/shifts.ts";
 
-export const SHIFT_CODES = new Set([
-  "D1", "D2",
-  "MIDA", "MIDB",
-  "E", "N",
-  "FT AM", "FT PM", "FT W",
-  "C", "A10",
-]);
+export const SHIFT_CODES = new Set<string>(ALL_SHIFTS);
 
 export const OFF_CODES = new Set(["X", "L", "LH"]);
 

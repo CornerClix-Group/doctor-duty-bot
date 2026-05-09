@@ -4,12 +4,14 @@
  * datetime A1, alternate month text, lowercase shift tokens, and summary rows.
  */
 
-// --- Types (must stay aligned with generate-schedule-v2 solver expectations) ---
+import {
+  type ShiftCode,
+  isNightCanonical,
+  normalizeShiftToken,
+} from "./shifts.ts";
 
-export type ShiftCode =
-  | "D1" | "D2" | "MIDA" | "MIDB" | "E" | "N"
-  | "FT" | "FT W" | "FT W12" | "FT AM" | "FT PM"
-  | "C" | "A10";
+// Re-export shift types for consumers that import parser core only
+export type { ShiftCode } from "./shifts.ts";
 
 export interface ParsedDay {
   date: string;
@@ -179,24 +181,6 @@ function extractMonthYear(
   throw new Error(
     `Invalid Month/Year in sheet header (A1 was "${a1Text}"). Expected a month name and year or an Excel date.`,
   );
-}
-
-function normalizeShiftToken(raw: string): ShiftCode | null {
-  if (!raw) return null;
-  const t = raw.trim().toUpperCase().replace(/\s+/g, " ");
-  if (t === "A") return "A10";
-  if (t === "FTW") return "FT W";
-  if (t === "FTAM") return "FT AM";
-  if (t === "FTPM") return "FT PM";
-  if (t === "MID" || t === "MID1") return "MIDA";
-  if (t === "MID2") return "MIDB";
-  if (t === "FTW12") return "FT W12";
-  const known: Record<string, ShiftCode> = {
-    D1: "D1", D2: "D2", MIDA: "MIDA", MIDB: "MIDB", E: "E", N: "N",
-    FT: "FT", "FT W": "FT W", "FT W12": "FT W12", "FT AM": "FT AM", "FT PM": "FT PM",
-    C: "C", A10: "A10",
-  };
-  return known[t] ?? null;
 }
 
 function parseConstraintCode(raw: string): { allowed: ShiftCode[]; offAllowed: boolean } | null {
@@ -370,18 +354,12 @@ export function parseScheduleWorkbook(workbook: { Sheets: Record<string, any>; S
         locked = true;
         offCode = upper;
         if (WHOLE_MONTH_OFF.has(upper)) wholeMonthOff = true;
-      } else if (upper === "C") {
-        locked = true;
-        assigned = "C";
-      } else if (upper === "A" || upper === "A10") {
-        locked = true;
-        assigned = "A10";
       } else {
         const norm = normalizeShiftToken(raw);
         if (norm) {
           locked = true;
           assigned = norm;
-          if (norm === "N") nightQuota += 1;
+          if (isNightCanonical(norm)) nightQuota += 1;
         } else {
           const c = parseConstraintCode(raw);
           if (c) {
