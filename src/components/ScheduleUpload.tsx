@@ -3,10 +3,8 @@ import { Upload, FileSpreadsheet, AlertCircle } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import * as XLSX from 'xlsx';
 import { parseSchedule } from '@/lib/scheduleParser';
-import { generateScheduleTemplate } from '@/lib/scheduleTemplateGenerator';
 import { extractLastPPFromExcel, extractLastPPBlockIndex } from '@/lib/extractPPFromExcel';
 import { generateScheduleTemplateBuffer } from '@/lib/scheduleTemplateGeneratorExcel';
 import { supabase } from '@/integrations/supabase/client';
@@ -263,9 +261,6 @@ export const ScheduleUpload = ({ onScheduleLoad, selectedMonth: propMonth, selec
       setError('Failed to generate template. Please try again.');
     }
   };
-
-  const currentYear = new Date().getFullYear();
-  const years = Array.from({ length: 5 }, (_, i) => currentYear + i);
 
   // Show month/year selector only when used standalone (not as a prop-controlled component)
   const showMonthYearSelector = propMonth === undefined && propYear === undefined;
