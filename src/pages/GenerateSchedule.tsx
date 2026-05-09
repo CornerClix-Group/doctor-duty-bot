@@ -261,8 +261,12 @@ export default function GenerateSchedule() {
           <CardHeader>
             <div className="flex items-center justify-between">
               <div>
-                <CardTitle>Optional: Upload Existing Schedule</CardTitle>
-                <CardDescription>Upload an Excel template with existing assignments</CardDescription>
+                <CardTitle>Step 1 — Upload your template</CardTitle>
+                <CardDescription>
+                  Download a template pre-filled with your current providers and prior pay-period carry-over.
+                  Add leave, constraints, and any pre-assigned shifts in Excel, then upload it back.
+                  We&apos;ll respect everything you&apos;ve locked in.
+                </CardDescription>
               </div>
               {uploadedData && (
                 <AlertDialog>
