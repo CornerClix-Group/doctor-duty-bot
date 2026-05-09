@@ -3,7 +3,7 @@
 
 import type { ParsedSchedule } from "./scheduleParser.ts";
 import type { ProviderRules, ValidationIssue } from "./solver.ts";
-import { requiredShifts } from "./shifts.ts";
+import { requiredShiftsForDay } from "./shifts.ts";
 
 export function validateInputs(
   parsed: ParsedSchedule,
@@ -33,7 +33,7 @@ export function validateInputs(
   // Coverage demand vs target sum
   let demand = 0;
   for (const d of parsed.days) {
-    demand += requiredShifts(d.coverage, d.dayOfWeek, parsed.monday_ft_rule_active).length;
+    demand += requiredShiftsForDay(d.mode, d.dayOfWeek, parsed.monday_ft_rule_active).length;
   }
   const targetSum = parsed.providers
     .filter(p => p.active)

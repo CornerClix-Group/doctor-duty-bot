@@ -7,6 +7,12 @@ import {
   parseScheduleWorkbook,
   toClientLegacySchedule,
 } from "../supabase/functions/_shared/scheduleParserCore.ts";
+import {
+  canonicalShift,
+  creditHours,
+  requiredShiftsForDay,
+  toCanonicalShift,
+} from "../supabase/functions/_shared/shifts.ts";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const fixturePath = (name: string) => path.join(__dirname, "fixtures", name);
@@ -138,6 +144,60 @@ describe("scheduleParserCore (synthetic)", () => {
     addProvider(rows, width, firstDayCol, "P", { [firstDayCol + 1]: "a" }, 6);
     const p = parseScheduleWorkbook(bookFromAoA(rows), XLSX);
     expect(p.providers[0].days[1].assigned).toBe("A10");
+  });
+
+  it("parses numeric night code 21 as canonical N", () => {
+    const { rows, width, firstDayCol } = gridMay31(3);
+    addProvider(rows, width, firstDayCol, "P", { [firstDayCol + 4]: 21 }, 6);
+    const p = parseScheduleWorkbook(bookFromAoA(rows), XLSX);
+    expect(p.providers[0].days[4].assigned).toBe("N");
+  });
+
+  it("parses lowercase 9-hr code 5p", () => {
+    const { rows, width, firstDayCol } = gridMay31(3);
+    addProvider(rows, width, firstDayCol, "P", { [firstDayCol + 5]: "5p" }, 6);
+    const p = parseScheduleWorkbook(bookFromAoA(rows), XLSX);
+    expect(p.providers[0].days[5].assigned).toBe("5p");
+  });
+
+  it("parses FT 7a as FT AM (canonical)", () => {
+    const { rows, width, firstDayCol } = gridMay31(3);
+    addProvider(rows, width, firstDayCol, "P", { [firstDayCol + 6]: "FT 7a" }, 6);
+    const p = parseScheduleWorkbook(bookFromAoA(rows), XLSX);
+    expect(p.providers[0].days[6].assigned).toBe("FT AM");
+  });
+
+  it("parses FT W9 as FT 9 (canonical)", () => {
+    const { rows, width, firstDayCol } = gridMay31(3);
+    addProvider(rows, width, firstDayCol, "P", { [firstDayCol + 7]: "FT W9" }, 6);
+    const p = parseScheduleWorkbook(bookFromAoA(rows), XLSX);
+    expect(p.providers[0].days[7].assigned).toBe("FT 9");
+  });
+
+  it("infers mode 8 when a day column uses 9-hr lowercase codes", () => {
+    const { rows, width, firstDayCol } = gridMay31(3);
+    const col = firstDayCol + 2;
+    rows[1][col] = 8;
+    addProvider(rows, width, firstDayCol, "A", { [col]: "5p" }, 5);
+    addProvider(rows, width, firstDayCol, "B", { [col]: "6a" }, 5);
+    const p = parseScheduleWorkbook(bookFromAoA(rows), XLSX);
+    const d = p.days.find((x) => x.dayOfMonth === 3);
+    expect(d?.mode).toBe(8);
+  });
+
+  it("infers mode 6 when only six base slots appear and coverage is 6", () => {
+    const { rows, width, firstDayCol } = gridMay31(3);
+    const col = firstDayCol;
+    rows[1][col] = 6;
+    addProvider(rows, width, firstDayCol, "P1", { [col]: "D1" }, 5);
+    addProvider(rows, width, firstDayCol, "P2", { [col]: "D2" }, 5);
+    addProvider(rows, width, firstDayCol, "P3", { [col]: "MIDA" }, 5);
+    addProvider(rows, width, firstDayCol, "P4", { [col]: "MIDB" }, 5);
+    addProvider(rows, width, firstDayCol, "P5", { [col]: "E" }, 5);
+    addProvider(rows, width, firstDayCol, "P6", { [col]: "N" }, 5);
+    const p = parseScheduleWorkbook(bookFromAoA(rows), XLSX);
+    const d = p.days.find((x) => x.dayOfMonth === 1);
+    expect(d?.mode).toBe(6);
   });
 
   it("stops provider rows at TOTAL summary (production order)", () => {
@@ -309,6 +369,41 @@ describe("scheduleParserCore (synthetic)", () => {
   });
 });
 
+describe("shared shifts catalog", () => {
+  it("canonicalShift maps 21 to N via alias", () => {
+    expect(canonicalShift("21")).toBe("N");
+  });
+
+  it("creditHours(C) is 10 credit hours", () => {
+    expect(creditHours("C")).toBe(10);
+  });
+
+  it("creditHours(FT PM) is 9 clock hours (regression)", () => {
+    expect(creditHours("FT PM")).toBe(9);
+  });
+});
+
+describe("requiredShiftsForDay (mode)", () => {
+  it("mode 8 Mon without monday FT returns seven 9-hr base slots", () => {
+    expect(requiredShiftsForDay(8, 1, false)).toEqual(["6a", "8a", "11a", "1p", "3p", "5p", "10p"]);
+  });
+
+  it("mode 8 Mon with monday FT adds FT 7a", () => {
+    expect(requiredShiftsForDay(8, 1, true)).toEqual([
+      "6a", "8a", "11a", "1p", "3p", "5p", "10p", "FT 7a",
+    ]);
+  });
+
+  it("mode 7 Sat returns base + FT W", () => {
+    const r = requiredShiftsForDay(7, 6, false);
+    expect(r).toEqual(["D1", "D2", "MIDA", "MIDB", "E", "N", "FT W"]);
+  });
+
+  it("mode 6 returns six base slots only", () => {
+    expect(requiredShiftsForDay(6, 3, false)).toEqual(["D1", "D2", "MIDA", "MIDB", "E", "N"]);
+  });
+});
+
 describe("scheduleParserCore (fixtures — skip when files absent)", () => {
   const mayIt = hasMay() ? it : it.skip;
   const juneIt = hasJune() ? it : it.skip;
@@ -373,4 +468,50 @@ describe("scheduleParserCore (fixtures — skip when files absent)", () => {
       expect(chk.days.every((d) => d.date.length === 10)).toBe(true);
     });
   }
+
+  mayIt("May 2026 production: exactly 23 roster providers", () => {
+    const wb = XLSX.read(fs.readFileSync(mayFixture), { type: "buffer" });
+    expect(parseScheduleWorkbook(wb, XLSX).providers.length).toBe(23);
+  });
+
+  juneIt("June 2026 production: exactly 21 roster providers", () => {
+    const wb = XLSX.read(fs.readFileSync(juneFixture), { type: "buffer" });
+    expect(parseScheduleWorkbook(wb, XLSX).providers.length).toBe(21);
+  });
+
+  mayIt("May 2026 production: Lopez TL whole-month off", () => {
+    const wb = XLSX.read(fs.readFileSync(mayFixture), { type: "buffer" });
+    const p = parseScheduleWorkbook(wb, XLSX);
+    const lopez = p.providers.find((x) => x.name.toLowerCase().includes("lopez"));
+    expect(lopez).toBeDefined();
+    expect(lopez!.active).toBe(false);
+    expect(lopez!.days.filter((d) => d.offCode === "TL").length).toBeGreaterThan(p.days.length - 5);
+  });
+
+  mayIt("May 2026 production: Coffin 12 night shifts in grid", () => {
+    const wb = XLSX.read(fs.readFileSync(mayFixture), { type: "buffer" });
+    const p = parseScheduleWorkbook(wb, XLSX);
+    const c = p.providers.find((x) => x.name.toLowerCase().includes("coffin"));
+    expect(c).toBeDefined();
+    const nights = c!.days.filter((d) => d.assigned && toCanonicalShift(d.assigned!) === "N").length;
+    expect(nights).toBe(12);
+    expect(c!.night_quota).toBe(12);
+  });
+
+  juneIt("June 2026 fixture: every assigned shift maps to canonical catalog", () => {
+    const wb = XLSX.read(fs.readFileSync(juneFixture), { type: "buffer" });
+    const p = parseScheduleWorkbook(wb, XLSX);
+    for (const prov of p.providers) {
+      for (const d of prov.days) {
+        if (!d.assigned) continue;
+        expect(toCanonicalShift(d.assigned)).toBeTruthy();
+      }
+    }
+  });
+
+  juneIt("June 2026 fixture: per-day mode is set for every parsed day", () => {
+    const wb = XLSX.read(fs.readFileSync(juneFixture), { type: "buffer" });
+    const p = parseScheduleWorkbook(wb, XLSX);
+    expect(p.days.every((d) => d.mode === 6 || d.mode === 7 || d.mode === 8)).toBe(true);
+  });
 });

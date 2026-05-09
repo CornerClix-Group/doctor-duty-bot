@@ -17,12 +17,16 @@ import { AlertCircle, AlertTriangle, RotateCcw, Save } from "lucide-react";
 import {
   checkCellEdit,
   type CellIssue,
+  type DayMode,
   type DayOutput,
   type ProviderRule,
 } from "./cellRules";
+import { requiredShiftsForDay } from "../../../supabase/functions/_shared/shifts.ts";
 
 interface EditableScheduleGridProps {
   schedule: DayOutput[];
+  /** From solver: when true, mode-8 Mondays include FT 7a layer */
+  mondayFtRuleActive?: boolean;
   onChange: (next: DayOutput[]) => void;
   onSaveDraft?: (next: DayOutput[]) => Promise<void>;
   onReset?: () => void;
@@ -32,6 +36,7 @@ const UNFILLED = "—";
 
 export function EditableScheduleGrid({
   schedule,
+  mondayFtRuleActive = false,
   onChange,
   onSaveDraft,
   onReset,
@@ -129,6 +134,39 @@ export function EditableScheduleGrid({
         return { ...a, provider: newProvider === UNFILLED ? "" : newProvider };
       });
       return { ...day, assignments };
+    });
+    onChange(next);
+  };
+
+  const handleModeChange = (date: string, mode: DayMode) => {
+    const next = schedule.map((day) => {
+      if (day.date !== date) return day;
+      const req = requiredShiftsForDay(mode, day.dayOfWeek, mondayFtRuleActive);
+      const byShift = new Map(day.assignments.map((a) => [a.shift, { ...a }]));
+      const assignments = req.map((shift) => {
+        const prev = byShift.get(shift);
+        const provider = prev?.provider ?? "";
+        return {
+          shift,
+          provider,
+          locked: prev?.locked,
+          unfilled: !provider,
+        };
+      });
+      for (const a of day.assignments) {
+        if ((a.shift === "C" || a.shift === "A10") && a.provider) {
+          if (!assignments.some((x) => x.shift === a.shift && x.provider === a.provider)) {
+            assignments.push({ shift: a.shift, provider: a.provider, locked: true, unfilled: false });
+          }
+        }
+      }
+      return {
+        ...day,
+        mode,
+        coverage: mode,
+        required: req as string[],
+        assignments,
+      };
     });
     onChange(next);
   };
@@ -233,6 +271,9 @@ export function EditableScheduleGrid({
                   <th className="glass sticky left-0 z-30 border-b border-r border-border/60 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                     Date
                   </th>
+                  <th className="glass sticky left-[1px] z-30 border-b border-r border-border/60 px-2 py-3 text-center text-xs font-semibold uppercase tracking-wider text-muted-foreground w-[72px]">
+                    Mode
+                  </th>
                   {shiftColumns.map((s) => (
                     <th
                       key={s}
@@ -267,6 +308,21 @@ export function EditableScheduleGrid({
                           {formatDate(day.date)}
                         </span>
                       </div>
+                    </td>
+                    <td className={`sticky left-[1px] z-10 ${rowBg} border-b border-r border-border/60 px-1 py-1 align-middle`}>
+                      <Select
+                        value={String(day.mode ?? day.coverage ?? 8)}
+                        onValueChange={(v) => handleModeChange(day.date, Number(v) as DayMode)}
+                      >
+                        <SelectTrigger className="h-8 w-[64px] rounded-md border-border/60 bg-background/80 text-xs font-medium tabular px-1">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="8">8</SelectItem>
+                          <SelectItem value="7">7</SelectItem>
+                          <SelectItem value="6">6</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </td>
                     {shiftColumns.map((shift) => {
                       const a = day.assignments.find((x) => x.shift === shift);

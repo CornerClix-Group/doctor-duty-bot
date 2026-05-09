@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -40,6 +41,10 @@ export function PublishPanel({ month, year, generatedSchedule, onStatusChange }:
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<"lock" | "publish" | "unpublish" | null>(null);
   const [sendEmails, setSendEmails] = useState(true);
+  const [manualOverrides, setManualOverrides] = useState<
+    { id: string; rule_violated: string; date: string; shift_assigned: string | null; rationale: string | null }[]
+  >([]);
+  const [overridesAcknowledged, setOverridesAcknowledged] = useState(false);
 
   const refresh = async () => {
     setLoading(true);
@@ -60,6 +65,22 @@ export function PublishPanel({ month, year, generatedSchedule, onStatusChange }:
   };
 
   useEffect(() => { refresh(); }, [month, year]);
+
+  useEffect(() => {
+    (async () => {
+      if (!scheduleRow?.id) {
+        setManualOverrides([]);
+        return;
+      }
+      const { data } = await supabase
+        .from("schedule_overrides")
+        .select("id, rule_violated, date, shift_assigned, rationale")
+        .eq("schedule_id", scheduleRow.id)
+        .order("date", { ascending: true });
+      setManualOverrides((data as any) || []);
+      setOverridesAcknowledged(false);
+    })();
+  }, [scheduleRow?.id]);
 
   const ensureSaved = async (): Promise<string | null> => {
     if (!generatedSchedule) {
@@ -211,6 +232,34 @@ export function PublishPanel({ month, year, generatedSchedule, onStatusChange }:
               </div>
             )}
 
+            {manualOverrides.length > 0 && (
+              <div className="rounded-md border border-amber-500/40 bg-amber-500/5 p-3 space-y-3">
+                <div className="font-medium text-sm flex items-center gap-2">
+                  <AlertTriangle className="h-4 w-4 text-amber-600" />
+                  Manual overrides ({manualOverrides.length})
+                </div>
+                <ul className="text-xs space-y-1 text-muted-foreground max-h-32 overflow-y-auto">
+                  {manualOverrides.map((o) => (
+                    <li key={o.id}>
+                      <span className="font-medium text-foreground">{o.date}</span>: {o.rule_violated}
+                      {o.shift_assigned ? ` → ${o.shift_assigned}` : ""}
+                      {o.rationale ? ` — ${o.rationale}` : ""}
+                    </li>
+                  ))}
+                </ul>
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id="ack-overrides"
+                    checked={overridesAcknowledged}
+                    onCheckedChange={(v) => setOverridesAcknowledged(!!v)}
+                  />
+                  <Label htmlFor="ack-overrides" className="text-sm cursor-pointer leading-snug">
+                    I have reviewed all manual overrides and they are intentional.
+                  </Label>
+                </div>
+              </div>
+            )}
+
             <div className="flex items-center gap-3 rounded-md border p-3">
               <Switch
                 id="send-emails"
@@ -281,7 +330,10 @@ export function PublishPanel({ month, year, generatedSchedule, onStatusChange }:
                     </AlertDialogHeader>
                     <AlertDialogFooter>
                       <AlertDialogCancel>Cancel</AlertDialogCancel>
-                      <AlertDialogAction onClick={() => callAction("publish")}>
+                      <AlertDialogAction
+                        disabled={manualOverrides.length > 0 && !overridesAcknowledged}
+                        onClick={() => callAction("publish")}
+                      >
                         Publish
                       </AlertDialogAction>
                     </AlertDialogFooter>

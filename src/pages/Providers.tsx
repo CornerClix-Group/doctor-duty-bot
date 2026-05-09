@@ -24,6 +24,16 @@ export interface Provider {
   saturday_restrictions: string | null;
   sunday_restrictions: string | null;
   block_pattern: string | null;
+  provider_group?: string | null;
+  requires_80hr_pp?: boolean | null;
+  night_only?: boolean | null;
+  evening_only?: boolean | null;
+  ft_or_mida_only?: boolean | null;
+  monthly_max_nights?: number | null;
+  night_block_min_length?: number | null;
+  night_block_max_length?: number | null;
+  nights_clean_days_after_block?: number | null;
+  counts_in_quotas?: boolean | null;
   created_at: string;
   updated_at: string;
   user_id: string | null;

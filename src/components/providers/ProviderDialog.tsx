@@ -9,6 +9,14 @@ import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2, X } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { Switch } from '@/components/ui/switch';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 interface ProviderDialogProps {
   open: boolean;
@@ -34,6 +42,16 @@ export const ProviderDialog = ({ open, onOpenChange, provider, onSuccess }: Prov
     saturday_restrictions: '',
     sunday_restrictions: '',
     block_pattern: '',
+    provider_group: 'gs' as 'military' | 'gs' | 'resident',
+    requires_80hr_pp: true,
+    night_only: false,
+    evening_only: false,
+    ft_or_mida_only: false,
+    monthly_max_nights: '' as string,
+    night_block_min_length: 3,
+    night_block_max_length: 4,
+    nights_clean_days_after_block: 3,
+    counts_in_quotas: true,
   });
 
   useEffect(() => {
@@ -50,6 +68,16 @@ export const ProviderDialog = ({ open, onOpenChange, provider, onSuccess }: Prov
         saturday_restrictions: provider.saturday_restrictions || '',
         sunday_restrictions: provider.sunday_restrictions || '',
         block_pattern: provider.block_pattern || '',
+        provider_group: (provider.provider_group as 'military' | 'gs' | 'resident') || 'gs',
+        requires_80hr_pp: provider.requires_80hr_pp !== false,
+        night_only: !!provider.night_only,
+        evening_only: !!provider.evening_only,
+        ft_or_mida_only: !!provider.ft_or_mida_only,
+        monthly_max_nights: provider.monthly_max_nights != null ? String(provider.monthly_max_nights) : '',
+        night_block_min_length: provider.night_block_min_length ?? 3,
+        night_block_max_length: provider.night_block_max_length ?? 4,
+        nights_clean_days_after_block: provider.nights_clean_days_after_block ?? 3,
+        counts_in_quotas: provider.counts_in_quotas !== false,
       });
     } else {
       setFormData({
@@ -64,6 +92,16 @@ export const ProviderDialog = ({ open, onOpenChange, provider, onSuccess }: Prov
         saturday_restrictions: '',
         sunday_restrictions: '',
         block_pattern: '',
+        provider_group: 'gs',
+        requires_80hr_pp: true,
+        night_only: false,
+        evening_only: false,
+        ft_or_mida_only: false,
+        monthly_max_nights: '',
+        night_block_min_length: 3,
+        night_block_max_length: 4,
+        nights_clean_days_after_block: 3,
+        counts_in_quotas: true,
       });
     }
   }, [provider, open]);
@@ -124,6 +162,21 @@ export const ProviderDialog = ({ open, onOpenChange, provider, onSuccess }: Prov
         saturday_restrictions: formData.saturday_restrictions.trim() || null,
         sunday_restrictions: formData.sunday_restrictions.trim() || null,
         block_pattern: formData.block_pattern.trim() || null,
+        provider_group: formData.provider_group,
+        requires_80hr_pp: formData.requires_80hr_pp,
+        night_only: formData.night_only,
+        evening_only: formData.evening_only,
+        ft_or_mida_only: formData.ft_or_mida_only,
+        monthly_max_nights:
+          formData.monthly_max_nights === ""
+            ? null
+            : Number.isFinite(parseInt(formData.monthly_max_nights, 10))
+              ? parseInt(formData.monthly_max_nights, 10)
+              : null,
+        night_block_min_length: formData.night_block_min_length,
+        night_block_max_length: formData.night_block_max_length,
+        nights_clean_days_after_block: formData.nights_clean_days_after_block,
+        counts_in_quotas: formData.counts_in_quotas,
       };
 
       if (provider) {
@@ -176,9 +229,10 @@ export const ProviderDialog = ({ open, onOpenChange, provider, onSuccess }: Prov
 
         <form onSubmit={handleSubmit}>
           <Tabs defaultValue="basic" className="w-full">
-            <TabsList className="grid w-full grid-cols-2">
+            <TabsList className="grid w-full grid-cols-3">
               <TabsTrigger value="basic">Basic Info</TabsTrigger>
-              <TabsTrigger value="constraints">Scheduling Constraints</TabsTrigger>
+              <TabsTrigger value="constraints">Constraints</TabsTrigger>
+              <TabsTrigger value="ed_rules">ED rules</TabsTrigger>
             </TabsList>
 
             <TabsContent value="basic" className="space-y-4 mt-4">
@@ -329,6 +383,123 @@ export const ProviderDialog = ({ open, onOpenChange, provider, onSuccess }: Prov
                   onChange={(e) => setFormData({ ...formData, block_pattern: e.target.value })}
                   placeholder="e.g., 3-4 night shifts with 4 days rest"
                 />
+              </div>
+            </TabsContent>
+
+            <TabsContent value="ed_rules" className="space-y-4 mt-4">
+              <p className="text-sm text-muted-foreground">
+                Operational rules for the Eisenhower ED scheduler (data-driven; no code deploy required).
+              </p>
+              <div className="space-y-2">
+                <Label>Provider group</Label>
+                <Select
+                  value={formData.provider_group}
+                  onValueChange={(v) =>
+                    setFormData({ ...formData, provider_group: v as 'military' | 'gs' | 'resident' })
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="gs">GS</SelectItem>
+                    <SelectItem value="military">Military</SelectItem>
+                    <SelectItem value="resident">Resident</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex items-center justify-between gap-4">
+                <Label htmlFor="req80">Requires exactly 80 credit hrs / PP (GS)</Label>
+                <Switch
+                  id="req80"
+                  checked={formData.requires_80hr_pp}
+                  onCheckedChange={(v) => setFormData({ ...formData, requires_80hr_pp: v })}
+                />
+              </div>
+              <div className="flex items-center justify-between gap-4">
+                <Label>Night-only provider</Label>
+                <Switch
+                  checked={formData.night_only}
+                  onCheckedChange={(v) => setFormData({ ...formData, night_only: v })}
+                />
+              </div>
+              <div className="flex items-center justify-between gap-4">
+                <Label>Evening-only provider</Label>
+                <Switch
+                  checked={formData.evening_only}
+                  onCheckedChange={(v) => setFormData({ ...formData, evening_only: v })}
+                />
+              </div>
+              <div className="flex items-center justify-between gap-4">
+                <Label>FT or MIDA only</Label>
+                <Switch
+                  checked={formData.ft_or_mida_only}
+                  onCheckedChange={(v) => setFormData({ ...formData, ft_or_mida_only: v })}
+                />
+              </div>
+              <div className="flex items-center justify-between gap-4">
+                <Label>Counts in fairness / quotas</Label>
+                <Switch
+                  checked={formData.counts_in_quotas}
+                  onCheckedChange={(v) => setFormData({ ...formData, counts_in_quotas: v })}
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Monthly max nights (empty = no cap)</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    value={formData.monthly_max_nights}
+                    onChange={(e) => setFormData({ ...formData, monthly_max_nights: e.target.value })}
+                    placeholder="e.g. 12"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Nights clean days after block</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    max={14}
+                    value={formData.nights_clean_days_after_block}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        nights_clean_days_after_block: parseInt(e.target.value, 10) || 0,
+                      })
+                    }
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Night block min length</Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    max={7}
+                    value={formData.night_block_min_length}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        night_block_min_length: parseInt(e.target.value, 10) || 1,
+                      })
+                    }
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Night block max length</Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    max={7}
+                    value={formData.night_block_max_length}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        night_block_max_length: parseInt(e.target.value, 10) || 4,
+                      })
+                    }
+                  />
+                </div>
               </div>
             </TabsContent>
           </Tabs>

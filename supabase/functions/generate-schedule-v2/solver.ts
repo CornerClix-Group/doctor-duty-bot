@@ -6,7 +6,8 @@ import {
   SHIFT_DEFS,
   TIGHTNESS_ORDER,
   hoursBetween,
-  requiredShifts,
+  requiredShiftsForDay,
+  type DayMode,
   type ShiftCode,
 } from "./shifts.ts";
 import type { ParsedSchedule, ParsedProvider, ParsedProviderDay } from "./scheduleParser.ts";
@@ -53,6 +54,8 @@ export interface DayOutput {
   date: string;
   dayOfWeek: number;
   coverage: number;
+  /** Per-day staffing mode (6/7/8); source of truth for required slot list */
+  mode: DayMode;
   required: ShiftCode[];
   assignments: DayAssignment[];
 }
@@ -245,7 +248,7 @@ export function solve(
   const sortedDays = [...parsed.days].sort((a,b) => a.date.localeCompare(b.date));
 
   for (const day of sortedDays) {
-    const required = requiredShifts(day.coverage, day.dayOfWeek, parsed.monday_ft_rule_active);
+    const required = requiredShiftsForDay(day.mode, day.dayOfWeek, parsed.monday_ft_rule_active);
     // Sort by tightness
     const ordered = [...required].sort((a,b) => TIGHTNESS_ORDER.indexOf(a) - TIGHTNESS_ORDER.indexOf(b));
     // Track who is already assigned today (locked or just-assigned)
@@ -365,7 +368,7 @@ export function solve(
 
   // ----- Build output -----
   const schedule: DayOutput[] = sortedDays.map(day => {
-    const required = requiredShifts(day.coverage, day.dayOfWeek, parsed.monday_ft_rule_active);
+    const required = requiredShiftsForDay(day.mode, day.dayOfWeek, parsed.monday_ft_rule_active);
     const assignments: DayAssignment[] = [];
     const seen = new Set<string>();
     for (const shift of required) {
@@ -395,6 +398,7 @@ export function solve(
       date: day.date,
       dayOfWeek: day.dayOfWeek,
       coverage: day.coverage,
+      mode: day.mode,
       required,
       assignments,
     };

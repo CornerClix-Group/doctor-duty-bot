@@ -13,16 +13,30 @@
 // ============================================================================
 
 import { SHIFT_CODES } from "./scheduleParser";
+import {
+  type ScheduleViolation,
+  type SchedulerProviderProfile,
+  circadianRatchetViolations,
+  isClinicalShift,
+  isNightShiftToken,
+  isShiftEligibleForProfile,
+  maxClinicalInRolling7,
+  maxConsecutiveClinicalDays,
+  recoveryDaysAfterNightBlock,
+} from "../../supabase/functions/_shared/schedulerHardRules.ts";
 
 export class HardScheduler {
   providers: any[] = [];
   providerDays: any[] = [];  // per-provider per-date instructions
   coveragePattern: Record<string, number> = {}; // e.g., { "2026-01-01": 7 }
+  /** Lowercased provider name → DB rule profile */
+  providerRuleProfiles: Record<string, SchedulerProviderProfile> = {};
 
   schedule: Record<string, Record<string, string | null>> = {}; 
   providerTotals: Record<string, { worked: number; weekends: number; nights: number; target: number; weekend_quota: number; night_quota: number }> = {};
   payPeriodTotals: Record<number, number> = {};
   warnings: string[] = [];
+  violations: ScheduleViolation[] = [];
   
   // Night block recovery tracking
   recoveryWindows: Map<string, Set<string>> = new Map(); // providerName -> Set of dates in recovery
@@ -31,6 +45,14 @@ export class HardScheduler {
   assignedShiftsPerDate: Record<string, Set<string>> = {}; // date -> Set of shift codes already assigned
 
   constructor() {}
+
+  setProviderRuleProfiles(profiles: Record<string, SchedulerProviderProfile>) {
+    this.providerRuleProfiles = profiles;
+  }
+
+  getRuleProfile(providerName: string): SchedulerProviderProfile | undefined {
+    return this.providerRuleProfiles[(providerName || "").trim().toLowerCase()];
+  }
 
   // --------------------------------------------------------------------------
   // LOAD PROVIDERS (merged with constraints)
@@ -119,6 +141,9 @@ export class HardScheduler {
     // OFF always allowed (Option 2)
     if (shift === "OFF") return true;
 
+    const prof = this.getRuleProfile(provider.name);
+    if (!isShiftEligibleForProfile(prof, shift)) return false;
+
     // Normal rules apply...
     const allowed = provider.allowed_shifts || [];
     const disallowed = provider.rules?.disallowed_shifts || [];
@@ -155,13 +180,13 @@ export class HardScheduler {
     const prev2Shift = prev2 ? this.schedule[prev2]?.[providerName] : undefined;
 
     // If assigning a Night today, allow even if last night was yesterday (continue block)
-    if (shift === 'N') return false;
+    if (isNightShiftToken(shift)) return false;
 
     // If yesterday was a night and today is not a night -> violation
-    if (prevShift === 'N' && shift !== 'OFF') return true;
+    if (isNightShiftToken(prevShift) && shift !== 'OFF') return true;
 
     // If two days ago was a night and yesterday was not -> still within 48h window
-    if (prev2Shift === 'N' && prevShift !== 'N' && shift !== 'OFF') return true;
+    if (isNightShiftToken(prev2Shift) && !isNightShiftToken(prevShift) && shift !== 'OFF') return true;
 
     return false;
   }
@@ -178,7 +203,7 @@ export class HardScheduler {
   // --------------------------------------------------------------------------
   
   isNight(shift: string | null | undefined): boolean {
-    return shift === "N";
+    return isNightShiftToken(shift);
   }
 
   wasNightYesterday(providerName: string, date: string): boolean {
@@ -200,9 +225,7 @@ export class HardScheduler {
   }
 
   getRequiredRecoveryDays(providerName: string): number {
-    // David Coffin requires 4 days, others require 2 (case-insensitive match)
-    const n = (providerName || '').trim().toLowerCase();
-    return (n.includes('coffin') && n.includes('david')) ? 4 : 2;
+    return recoveryDaysAfterNightBlock(this.getRuleProfile(providerName), 2);
   }
 
   enforcePostNightBlockRecovery(providerName: string, blockEndDate: string) {
@@ -279,8 +302,8 @@ export class HardScheduler {
   }
 
   canFormValidNightBlock(providerName: string, date: string): boolean {
-    // Only David Coffin has block size restrictions (3 or 4 nights)
-    if (providerName !== "David Coffin") return true;
+    const prof = this.getRuleProfile(providerName);
+    if (!prof?.night_only) return true;
 
     const dates = Object.keys(this.schedule).sort();
     const dateIndex = dates.indexOf(date);
@@ -289,8 +312,8 @@ export class HardScheduler {
     // Count consecutive nights before this date
     const nightsBefore = this.getConsecutiveNightCount(providerName, dates[dateIndex - 1] || date);
 
-    // If already at 4 nights, can't add more
-    if (nightsBefore >= 4) return false;
+    const blockMax = prof.night_block_max_length ?? 4;
+    if (nightsBefore >= blockMax) return false;
 
     // Look ahead to see how many consecutive nights are feasible after this date
     const provider = this.providers.find(p => p.name.trim().toLowerCase() === providerName.trim().toLowerCase());
@@ -319,36 +342,33 @@ export class HardScheduler {
         break;
       }
 
-      // Max block size is 4
-      if (nightsBefore + 1 + canExtend >= 4) break;
+      if (nightsBefore + 1 + canExtend >= blockMax) break;
     }
 
     const potential = nightsBefore + 1 + canExtend;
+    const blockMin = prof.night_block_min_length ?? 3;
 
-    // We need possibility to reach at least 3 nights total
-    if (potential < 3) return false;
+    if (potential < blockMin) return false;
 
-    // Never exceed 4
-    if (nightsBefore + 1 > 4) return false;
+    if (nightsBefore + 1 > blockMax) return false;
 
     return true;
   }
 
   validateNightBlockSize(providerName: string, blockEndDate: string): boolean {
-    // Only David Coffin has block size restrictions (case-insensitive)
-    const n = (providerName || '').trim().toLowerCase();
-    if (!(n.includes('coffin') && n.includes('david'))) return true;
+    const prof = this.getRuleProfile(providerName);
+    if (!prof?.night_only) return true;
 
     const blockSize = this.getConsecutiveNightCount(providerName, blockEndDate);
-    
-    // Valid block sizes are 3 or 4
-    if (blockSize < 3 || blockSize > 4) {
+    const minL = prof.night_block_min_length ?? 3;
+    const maxL = prof.night_block_max_length ?? 4;
+    if (blockSize < minL || blockSize > maxL) {
       this.warnings.push(
-        `${providerName}: Night block of ${blockSize} shifts detected (must be 3 or 4). Block ending ${blockEndDate}`
+        `${providerName}: Night block of ${blockSize} shifts (allowed ${minL}-${maxL}). Block ending ${blockEndDate}`,
       );
       return false;
     }
-    
+
     return true;
   }
 
@@ -360,9 +380,8 @@ export class HardScheduler {
    * Check if provider should use streak logic (excludes Coffin, Lopez, Venugopal)
    */
   shouldUseStreakLogic(providerName: string): boolean {
-    const n = (providerName || '').toLowerCase();
-    const excluded = ['coffin', 'lopez', 'venugopal'];
-    return !excluded.some(name => n.includes(name));
+    const p = this.getRuleProfile(providerName);
+    return p?.counts_in_quotas !== false;
   }
 
   /**
@@ -378,7 +397,7 @@ export class HardScheduler {
       const d = dates[i];
       const shift = this.schedule[d]?.[providerName];
       
-      if (shift && shift !== "OFF" && SHIFT_CODES.has(shift)) {
+      if (isClinicalShift(shift)) {
         streak++;
       } else {
         break;
@@ -444,6 +463,7 @@ export class HardScheduler {
   // MAIN SOLVER
   // --------------------------------------------------------------------------
   solve() {
+    this.violations = [];
     // preload fixed assignments
     this.preloadAssignments();
     
@@ -516,20 +536,14 @@ export class HardScheduler {
           if (!this.isShiftAllowed(provider, providerDay, shift, date))
             continue;
 
-          // Special validation for David Coffin's night blocks
           if (this.isNight(shift) && !this.canFormValidNightBlock(provider.name, date)) {
             continue;
           }
 
-          // Do not end Coffin's night block prematurely
-          if (provider.name === "David Coffin" && !this.isNight(shift) && this.wasNightYesterday(provider.name, date)) {
-            const prevDate = this.getPreviousDate(date);
-            if (prevDate) {
-              const blockSoFar = this.getConsecutiveNightCount(provider.name, prevDate);
-              if (blockSoFar < 2 || blockSoFar > 3) {
-                continue;
-              }
-            }
+          const prof = this.getRuleProfile(provider.name);
+          const cap = prof?.monthly_max_nights;
+          if (cap != null && this.isNight(shift) && this.getCurrentNightCount(provider.name) >= cap) {
+            continue;
           }
 
           // Check if provider is at or exceeding night quota (soft limit)
@@ -568,20 +582,51 @@ export class HardScheduler {
         }
       }
 
-      // If coverage still not met — fail hard
       if (coverageNeeded > 0) {
-        throw new Error(
-          `Cannot satisfy coverage for date ${date}. Remaining unmet: ${coverageNeeded}`
-        );
+        this.violations.push({
+          type: "coverage_unfilled",
+          date,
+          message: `Cannot satisfy coverage for ${date}; ${coverageNeeded} slot(s) unfilled.`,
+        });
+        break;
       }
     }
 
     this.computeTotals();
+    const dates = Object.keys(this.schedule).sort();
+    for (const p of this.providers) {
+      const name = p.name;
+      if (maxConsecutiveClinicalDays(this.schedule, name, dates) > 4) {
+        this.violations.push({
+          type: "max_consecutive_clinical",
+          provider: name,
+          message: "Exceeds 4 consecutive clinical days",
+        });
+      }
+      if (maxClinicalInRolling7(this.schedule, name, dates) > 4) {
+        this.violations.push({
+          type: "rolling_7_clinical",
+          provider: name,
+          message: "Exceeds 4 clinical shifts in a rolling 7-day window",
+        });
+      }
+      this.violations.push(...circadianRatchetViolations(this.schedule, name, dates));
+    }
+
     return {
       schedule: this.schedule,
       providerTotals: this.providerTotals,
       payPeriodTotals: this.payPeriodTotals,
-      warnings: this.warnings
+      warnings: this.warnings,
+      violations: this.violations,
+      success: this.violations.length === 0,
+      softScores: {
+        isolatedShifts: 0,
+        circadianFlips: 0,
+        shiftFairnessVariance: 0,
+        callFairnessVariance: 0,
+        weekendFairnessVariance: 0,
+      },
     };
   }
 
@@ -602,8 +647,6 @@ export class HardScheduler {
   // COMPUTE TOTALS (per provider + per pay period)
   // --------------------------------------------------------------------------
   computeTotals() {
-    const WORK_SHIFTS = new Set(["D1","D2","MIDA","MIDB","E","N","FT W","FT W12","FT AM","FT PM"]);
-    
     // Initialize totals from providerDays
     for (const providerData of this.providerDays) {
       const name = providerData.name;
@@ -625,7 +668,7 @@ export class HardScheduler {
 
       for (let providerName in this.schedule[date]) {
         const shift = this.schedule[date][providerName];
-        if (shift && shift !== "OFF" && WORK_SHIFTS.has(shift)) {
+        if (isClinicalShift(shift) && shift !== "C" && shift !== "A10") {
           this.providerTotals[providerName].worked += 1;
           const dow = new Date(date).getDay();
           if (dow === 0 || dow === 6) {
