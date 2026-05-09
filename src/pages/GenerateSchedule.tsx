@@ -7,7 +7,7 @@ import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { Download, Trash2, ArrowLeft, FileSpreadsheet, Sparkles } from 'lucide-react';
 import { ScheduleUpload } from '@/components/ScheduleUpload';
-import { ScheduleWorkbench } from '@/components/build/ScheduleWorkbench.tsx';
+import { ScheduleWorkbench } from '@/components/ScheduleWorkbench';
 import { EditTab } from '@/components/edit/EditTab';
 import { PublishPanel } from '@/components/publish/PublishPanel';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
