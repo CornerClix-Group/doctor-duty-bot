@@ -10,19 +10,12 @@ import { generateScheduleTemplate } from '@/lib/scheduleTemplateGenerator';
 import { extractLastPPFromExcel, extractLastPPBlockIndex } from '@/lib/extractPPFromExcel';
 import { generateScheduleTemplateBuffer } from '@/lib/scheduleTemplateGeneratorExcel';
 import { supabase } from '@/integrations/supabase/client';
+import { getNextMonthAndYear } from '@/lib/dateUtils';
 
-function getNextMonthAndYear() {
-  const now = new Date();
-  let month = now.getMonth() + 1; // 1-12 for UI
-  let year = now.getFullYear();
-
-  if (month > 12) {
-    month = 1;
-    year += 1;
-  }
-
-  return { month, year };
-}
+const MONTH_NAMES = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
 
 interface ScheduleUploadProps {
   onScheduleLoad: (data: any, base64File?: string) => void;
@@ -38,10 +31,12 @@ export const ScheduleUpload = ({ onScheduleLoad, selectedMonth: propMonth, selec
   const [providers, setProviders] = useState<any[]>([]);
   const [loadingProviders, setLoadingProviders] = useState(true);
   
-  // Use props if provided, otherwise default to next month
-  const { month: nextMonth, year: nextYear } = getNextMonthAndYear();
-  const selectedMonth = propMonth ?? nextMonth;
-  const selectedYear = propYear ?? nextYear;
+  // Use props if provided, otherwise default to next calendar month
+  const next = getNextMonthAndYear();
+  const defaultMonthIdx = MONTH_NAMES.indexOf(next.month);
+  const defaultMonthNumber = defaultMonthIdx >= 0 ? defaultMonthIdx + 1 : 1;
+  const selectedMonth = propMonth ?? defaultMonthNumber;
+  const selectedYear = propYear ?? next.year;
 
   useEffect(() => {
     async function loadProviders() {
@@ -241,11 +236,6 @@ export const ScheduleUpload = ({ onScheduleLoad, selectedMonth: propMonth, selec
     }
   };
 
-  const months = [
-    'January', 'February', 'March', 'April', 'May', 'June',
-    'July', 'August', 'September', 'October', 'November', 'December'
-  ];
-
   const currentYear = new Date().getFullYear();
   const years = Array.from({ length: 5 }, (_, i) => currentYear + i);
 
@@ -257,7 +247,7 @@ export const ScheduleUpload = ({ onScheduleLoad, selectedMonth: propMonth, selec
       {showMonthYearSelector && (
         <div className="flex items-center gap-4 mb-4">
           <div className="text-sm font-medium text-muted-foreground">
-            Template for: {months[selectedMonth - 1]} {selectedYear}
+            Template for: {MONTH_NAMES[selectedMonth - 1]} {selectedYear}
           </div>
         <Button onClick={handleDownloadTemplate} variant="default" disabled={loadingProviders || providers.length === 0}>
           Download Template

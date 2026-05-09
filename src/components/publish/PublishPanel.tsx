@@ -49,6 +49,8 @@ export function PublishPanel({ month, year, generatedSchedule, onStatusChange }:
         .select("id, status, locked_at, published_at, validation_results")
         .eq("month", month)
         .eq("year", year)
+        .order("created_at", { ascending: false })
+        .limit(1)
         .maybeSingle();
       setScheduleRow(data as ScheduleRow | null);
       onStatusChange?.(data?.status || "none");
@@ -60,7 +62,6 @@ export function PublishPanel({ month, year, generatedSchedule, onStatusChange }:
   useEffect(() => { refresh(); }, [month, year]);
 
   const ensureSaved = async (): Promise<string | null> => {
-    if (scheduleRow?.id) return scheduleRow.id;
     if (!generatedSchedule) {
       toast({
         title: "Nothing to save",
@@ -87,11 +88,30 @@ export function PublishPanel({ month, year, generatedSchedule, onStatusChange }:
       status: "draft" as const,
       created_by: userId,
     };
-    const { data, error } = await supabase
-      .from("schedules")
-      .insert(payload)
-      .select("id, status, locked_at, published_at, validation_results")
-      .maybeSingle();
+
+    const existingId = scheduleRow?.id ?? (
+      await supabase
+        .from("schedules")
+        .select("id")
+        .eq("month", month)
+        .eq("year", year)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle()
+    ).data?.id;
+
+    const { data, error } = existingId
+      ? await supabase
+          .from("schedules")
+          .update(payload)
+          .eq("id", existingId)
+          .select("id, status, locked_at, published_at, validation_results")
+          .maybeSingle()
+      : await supabase
+          .from("schedules")
+          .insert(payload)
+          .select("id, status, locked_at, published_at, validation_results")
+          .maybeSingle();
     if (error) {
       toast({ title: "Save failed", description: error.message, variant: "destructive" });
       return null;
