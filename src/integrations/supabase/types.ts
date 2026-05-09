@@ -609,6 +609,31 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      get_next_open_period: {
+        Args: never
+        Returns: {
+          error_count: number
+          locked_at: string
+          month: string
+          published_at: string
+          status: string
+          updated_at: string
+          warn_count: number
+          year: number
+        }[]
+      }
+      get_recent_schedule_activity: {
+        Args: { limit_n?: number }
+        Returns: {
+          actor_email: string
+          created_by: string
+          id: string
+          month: string
+          status: string
+          updated_at: string
+          year: number
+        }[]
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
