@@ -58,7 +58,9 @@ export const WHOLE_MONTH_OFF = new Set(["TL", "DP"]);
 /** Row labels in column A that are totals / shift buckets, not provider names */
 export const SUMMARY_ROW_MARKERS = new Set([
   "D1", "D2", "MIDA", "MIDB", "E", "N", "FT", "FT W", "FT W12", "FT AM", "FT PM",
-  "C", "A10", "TOTAL", "TOTALS", "SUBTOTAL", "SUB-TOTAL", "GRAND TOTAL", "SUM",
+  "FT WKND",
+  "C", "A10", "C SHIFTS",
+  "TOTAL", "TOTALS", "SUBTOTAL", "SUB-TOTAL", "GRAND TOTAL", "SUM",
 ]);
 
 const MONTH_NAMES = [
@@ -339,8 +341,9 @@ export function parseScheduleWorkbook(workbook: { Sheets: Record<string, any>; S
     const nameRaw = safeCell(sheet, row, 0, XLSX);
     if (!nameRaw) continue;
     const nameUpper = nameRaw.trim().toUpperCase();
-    if (SUMMARY_ROW_MARKERS.has(nameUpper)) continue;
-    if (SUMMARY_ROW_MARKERS.has(nameRaw.trim())) continue;
+    // Production layout: provider block, then summary rows, then notes / zeros / duplicates.
+    // Once we hit a known summary label, everything below is out of scope.
+    if (SUMMARY_ROW_MARKERS.has(nameUpper)) break;
 
     const weekendQuotaCell = safeCell(sheet, row, 1, XLSX);
     const weekend_quota = Number(weekendQuotaCell) || 0;

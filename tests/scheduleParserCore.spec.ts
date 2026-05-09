@@ -140,22 +140,38 @@ describe("scheduleParserCore (synthetic)", () => {
     expect(p.providers[0].days[1].assigned).toBe("A10");
   });
 
-  it("skips TOTAL summary row", () => {
+  it("stops provider rows at TOTAL summary (production order)", () => {
     const { rows, width, firstDayCol } = gridMay31(3);
-    addProvider(rows, width, firstDayCol, "TOTAL", { [firstDayCol]: 1 }, 0);
     addProvider(rows, width, firstDayCol, "Real", {}, 5);
+    addProvider(rows, width, firstDayCol, "TOTAL", { [firstDayCol]: 1 }, 0);
+    addProvider(rows, width, firstDayCol, "Phantom Dup", {}, 9);
     const p = parseScheduleWorkbook(bookFromAoA(rows), XLSX);
-    expect(p.providers.some((x) => x.name === "TOTAL")).toBe(false);
-    expect(p.providers.some((x) => x.name === "Real")).toBe(true);
+    expect(p.providers.length).toBe(1);
+    expect(p.providers[0].name).toBe("Real");
   });
 
-  it("skips SUBTOTAL row", () => {
+  it("stops provider rows at SUBTOTAL (production order)", () => {
     const { rows, width, firstDayCol } = gridMay31(3);
-    addProvider(rows, width, firstDayCol, "Subtotal", {}, 0);
     addProvider(rows, width, firstDayCol, "Doc", {}, 4);
+    addProvider(rows, width, firstDayCol, "Subtotal", {}, 0);
+    addProvider(rows, width, firstDayCol, "Notes", {}, 0);
     const p = parseScheduleWorkbook(bookFromAoA(rows), XLSX);
     expect(p.providers.length).toBe(1);
     expect(p.providers[0].name).toBe("Doc");
+  });
+
+  it("production layout: providers then FT WKND summary then junk rows are ignored", () => {
+    const { rows, width, firstDayCol } = gridMay31(3);
+    addProvider(rows, width, firstDayCol, "Prov0", {}, 10);
+    addProvider(rows, width, firstDayCol, "Prov1", {}, 11);
+    addProvider(rows, width, firstDayCol, "Prov2", {}, 12);
+    addProvider(rows, width, firstDayCol, "FT WKND", {}, 0);
+    addProvider(rows, width, firstDayCol, "C SHIFTS", {}, 0);
+    addProvider(rows, width, firstDayCol, "0", {}, 0);
+    addProvider(rows, width, firstDayCol, "Prov0", {}, 99);
+    const p = parseScheduleWorkbook(bookFromAoA(rows), XLSX);
+    expect(p.providers.length).toBe(3);
+    expect(p.providers.map((x) => x.name)).toEqual(["Prov0", "Prov1", "Prov2"]);
   });
 
   it("classifies OFF code X", () => {
