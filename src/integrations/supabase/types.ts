@@ -474,6 +474,50 @@ export type Database = {
         }
         Relationships: []
       }
+      schedule_overrides: {
+        Row: {
+          created_at: string | null
+          created_by: string | null
+          date: string
+          id: string
+          provider_id: string | null
+          rationale: string | null
+          rule_violated: string
+          schedule_id: string
+          shift_assigned: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          created_by?: string | null
+          date: string
+          id?: string
+          provider_id?: string | null
+          rationale?: string | null
+          rule_violated: string
+          schedule_id: string
+          shift_assigned?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          created_by?: string | null
+          date?: string
+          id?: string
+          provider_id?: string | null
+          rationale?: string | null
+          rule_violated?: string
+          schedule_id?: string
+          shift_assigned?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "schedule_overrides_schedule_id_fkey"
+            columns: ["schedule_id"]
+            isOneToOne: false
+            referencedRelation: "schedules"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       schedules: {
         Row: {
           adjusted_targets: Json | null
