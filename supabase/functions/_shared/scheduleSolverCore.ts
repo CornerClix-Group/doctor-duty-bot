@@ -137,17 +137,36 @@ export function scoreProviderForSlotFixed(
       if (sh < sp) circFlip = 1;
     }
   }
-  /** Prefer continuing an in-progress night block (real roster stability). */
-  let nightBlockContinue = 0;
-  if (idx > 0 && isNightShiftToken(slot as string)) {
-    const prevShift = schedule[dates[idx - 1]]?.[name];
-    if (isNightShiftToken(prevShift)) {
-      nightBlockContinue = 750;
+
+  // Night-block continuation: when a night_only provider has an open block
+  // that hasn't reached min length, force the scheduler to extend it by
+  // assigning a massive priority boost. This prevents greedy placement
+  // from leaving isolated 1- or 2-night stints that violate the block
+  // length minimum (verifyFinalHardRules catches these post-hoc, but we
+  // want the scheduler to produce valid output, not just fail honestly).
+  let nightBlockContinuation = 0;
+  const profForName = profiles[name.trim().toLowerCase()];
+  if (
+    profForName?.night_only &&
+    (slot === "N" || slot === "21" || slot === "10p") &&
+    idx > 0
+  ) {
+    const minL = profForName.night_block_min_length ?? 3;
+    // Count consecutive nights immediately ending at idx-1 for this provider
+    let priorNights = 0;
+    for (let j = idx - 1; j >= 0; j--) {
+      const s = schedule[dates[j]]?.[name];
+      if (s === "N" || s === "21" || s === "10p") priorNights++;
+      else break;
+    }
+    if (priorNights > 0 && priorNights < minL) {
+      // This placement would extend an under-min block — make it irresistible
+      nightBlockContinuation = 1;
     }
   }
   return (
+    1_000_000 * nightBlockContinuation + // dominant — overrides all else
     1000 * extendStretch +
-    nightBlockContinue +
     500 * Math.min(nextOffLen, 14) -
     300 * circFlip -
     50 * clinical -
@@ -418,6 +437,7 @@ export function verifyFinalHardRules(
   schedule: Record<string, Record<string, string | null>>,
   dates: string[],
   providers: SolverProviderRow[],
+  profiles?: Record<string, ProviderRuleProfile>,
 ): ScheduleViolation[] {
   const out: ScheduleViolation[] = [];
   for (const p of providers) {
@@ -437,44 +457,51 @@ export function verifyFinalHardRules(
       });
     }
     out.push(...circadianRatchetViolations(schedule, name, dates));
-  }
-  return out;
-}
 
-/**
- * After placement, every contiguous night run for night_only providers must sit in [min,max].
- */
-export function verifyNightBlocksPostPlacement(
-  schedule: Record<string, Record<string, string | null>>,
-  dates: string[],
-  providers: SolverProviderRow[],
-  profiles: Record<string, ProviderRuleProfile>,
-): ScheduleViolation[] {
-  const out: ScheduleViolation[] = [];
-  for (const p of providers) {
-    const prof = profiles[p.name.trim().toLowerCase()];
-    if (!prof?.night_only) continue;
-    const minL = prof.night_block_min_length ?? 3;
-    const maxL = prof.night_block_max_length ?? 4;
-    const name = p.name;
-    let i = 0;
-    while (i < dates.length) {
-      if (!isNightShiftToken(schedule[dates[i]]?.[name])) {
-        i++;
-        continue;
+    // Night-block length verification for night_only providers.
+    // The placement loop's checkPlacement only verifies that a NEW block
+    // CAN reach min length; it doesn't enforce that the block actually
+    // does reach min length. Greedy day-by-day placement can leave
+    // isolated 1- or 2-night stints that violate night_block_min_length.
+    // Catch those here so the scheduler reports honestly.
+    const prof = profiles?.[name.trim().toLowerCase()];
+    if (prof?.night_only) {
+      const minL = prof.night_block_min_length ?? 3;
+      const maxL = prof.night_block_max_length ?? 4;
+      let blockStart = -1;
+      let blockLen = 0;
+      const nightToken = (s: string | null | undefined) =>
+        !!s && (s === "N" || s === "21" || s === "10p");
+      for (let i = 0; i <= dates.length; i++) {
+        const onNight = i < dates.length && nightToken(schedule[dates[i]]?.[name]);
+        if (onNight && blockStart === -1) {
+          blockStart = i;
+          blockLen = 1;
+        } else if (onNight) {
+          blockLen += 1;
+        } else if (blockStart !== -1) {
+          if (blockLen < minL) {
+            out.push({
+              type: "night_block_length",
+              provider: name,
+              date: dates[blockStart],
+              shift: "N",
+              message: `Night block of ${blockLen} (started ${dates[blockStart]}) is shorter than minimum ${minL}`,
+            });
+          }
+          if (blockLen > maxL) {
+            out.push({
+              type: "night_block_length",
+              provider: name,
+              date: dates[blockStart],
+              shift: "N",
+              message: `Night block of ${blockLen} (started ${dates[blockStart]}) exceeds maximum ${maxL}`,
+            });
+          }
+          blockStart = -1;
+          blockLen = 0;
+        }
       }
-      let j = i;
-      while (j < dates.length && isNightShiftToken(schedule[dates[j]]?.[name])) j++;
-      const len = j - i;
-      if (len < minL || len > maxL) {
-        out.push({
-          type: "night_block_length",
-          provider: name,
-          date: dates[j - 1],
-          message: `Final night block length ${len} outside allowed ${minL}-${maxL} (ends ${dates[j - 1]})`,
-        });
-      }
-      i = j;
     }
   }
   return out;

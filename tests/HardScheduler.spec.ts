@@ -183,21 +183,19 @@ describe("checkPlacement (generation-time hard rules)", () => {
 });
 
 describe("HardScheduler monthSolve smoke", () => {
-  it("fills mode-6 days with six flexible providers", () => {
-    const dates = Array.from({ length: 5 }, (_, i) => {
+  it("fills mode-6 days with six flexible providers (within 4-consecutive cap)", () => {
+    // 4 days × 6 providers = each provider works exactly 4 consecutive days,
+    // exactly at the 4-day cap. Anything more would hit the rule.
+    const dates = Array.from({ length: 4 }, (_, i) => {
       const day = String(i + 1).padStart(2, "0");
       return `2026-06-${day}`;
     });
     const names = ["P1", "P2", "P3", "P4", "P5", "P6"];
     const sch = new HardScheduler();
     sch.setMondayFtRuleActive(false);
-    // Mixed-case keys: setProviderRuleProfiles normalizes to lowercase for lookup.
-    sch.setProviderRuleProfiles(
-      Object.fromEntries(names.map((n, i) => [i % 2 === 0 ? n : n.toLowerCase(), {}])) as Record<
-        string,
-        object
-      >,
-    );
+    const profs: Record<string, object> = {};
+    names.forEach((n) => { profs[n.toLowerCase()] = { requires_80hr_pp: false }; });
+    sch.setProviderRuleProfiles(profs);
     sch.loadProviders(names.map((name) => ({ name, active: true })));
     sch.setProviderDays(
       names.map((name) => ({
@@ -216,5 +214,37 @@ describe("HardScheduler monthSolve smoke", () => {
     expect(out.schedule).not.toBeNull();
     const day1 = out.schedule!.find((x) => x.date === "2026-06-01");
     expect(day1?.assignments.filter((a) => a.provider).length).toBe(6);
+  });
+
+  it("refuses 5th consecutive clinical day — coverage_unfilled when only 6 providers across 5 days", () => {
+    // 5 days × 6 providers requires each to work 5 in a row — must fail under
+    // the 4-consecutive hard rule. This is a regression test that the rule
+    // actually fires during placement, not just post-hoc detection.
+    const dates = Array.from({ length: 5 }, (_, i) => {
+      const day = String(i + 1).padStart(2, "0");
+      return `2026-06-${day}`;
+    });
+    const names = ["P1", "P2", "P3", "P4", "P5", "P6"];
+    const sch = new HardScheduler();
+    sch.setMondayFtRuleActive(false);
+    const profs: Record<string, object> = {};
+    names.forEach((n) => { profs[n.toLowerCase()] = { requires_80hr_pp: false }; });
+    sch.setProviderRuleProfiles(profs);
+    sch.loadProviders(names.map((name) => ({ name, active: true })));
+    sch.setProviderDays(
+      names.map((name) => ({
+        name,
+        target_shifts: 20,
+        weekend_quota: 0,
+        night_quota: 0,
+        days: dates.map((date) => ({ date })),
+      })),
+    );
+    const cov: Record<string, number> = {};
+    dates.forEach((d) => { cov[d] = 6; });
+    sch.setCoveragePattern(cov);
+    const out = sch.solve();
+    expect(out.success).toBe(false);
+    expect(out.violations.some((v) => v.type === "coverage_unfilled" && v.date === "2026-06-05")).toBe(true);
   });
 });

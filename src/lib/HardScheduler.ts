@@ -66,11 +66,13 @@ export class HardScheduler {
   constructor() {}
 
   setProviderRuleProfiles(profiles: Record<string, SchedulerProviderProfile>) {
-    const next: Record<string, SchedulerProviderProfile> = {};
-    for (const [k, v] of Object.entries(profiles)) {
-      next[k.trim().toLowerCase()] = v;
+    // Normalize keys to lowercase + trimmed so getRuleProfile lookups match
+    // regardless of how the caller cased the provider name.
+    const normalized: Record<string, SchedulerProviderProfile> = {};
+    for (const [name, prof] of Object.entries(profiles || {})) {
+      normalized[(name || "").trim().toLowerCase()] = prof;
     }
-    this.providerRuleProfiles = next;
+    this.providerRuleProfiles = normalized;
   }
 
   getRuleProfile(providerName: string): SchedulerProviderProfile | undefined {
