@@ -1,48 +1,67 @@
 // ============================================================================
-// HardScheduler.ts — COMPLETE REWRITE FOR MEDICAL-GRADE SCHEDULING
-// Supports:
-//   - Preassigned shifts
-//   - OFF blocks (X/L/LH)
-//   - Constraint overrides (Option A)
-//   - Off allowed by default (Option 2)
-//   - Coverage patterns
-//   - Provider-specific rules
-//   - Rest-hour protection
-//   - Night recovery
-//   - Deterministic assignment
+// HardScheduler — mode-aware placement with shared hard-rule enforcement
 // ============================================================================
 
 import { SHIFT_CODES } from "./scheduleParser";
 import {
+  SHIFT_DEFS,
+  coverageToDayMode,
+  requiredShiftsForDay,
+  toCanonicalShift,
+  type DayMode,
+} from "../../supabase/functions/_shared/shifts.ts";
+import {
   type ScheduleViolation,
   type SchedulerProviderProfile,
-  circadianRatchetViolations,
-  isClinicalShift,
   isNightShiftToken,
-  isShiftEligibleForProfile,
-  maxClinicalInRolling7,
-  maxConsecutiveClinicalDays,
-  recoveryDaysAfterNightBlock,
+  isClinicalShift,
 } from "../../supabase/functions/_shared/schedulerHardRules.ts";
+import {
+  computeSoftScoresFull,
+  type SolverProviderDayCell,
+  type SolverProviderRow,
+} from "../../supabase/functions/_shared/scheduleSolverCore.ts";
+import { runMonthSolve } from "../../supabase/functions/_shared/scheduler/monthSolve.ts";
+
+export interface HardSolveResult {
+  success: boolean;
+  schedule: ReturnType<HardScheduler["toGeneratedSchedule"]> | null;
+  violations: ScheduleViolation[];
+  softScores: ReturnType<typeof computeSoftScoresFull>;
+  providerTotals: Record<string, {
+    worked: number;
+    weekends: number;
+    nights: number;
+    target: number;
+    weekend_quota: number;
+    night_quota: number;
+  }>;
+  payPeriodTotals: Record<number, number>;
+  warnings: string[];
+}
 
 export class HardScheduler {
   providers: any[] = [];
-  providerDays: any[] = [];  // per-provider per-date instructions
-  coveragePattern: Record<string, number> = {}; // e.g., { "2026-01-01": 7 }
-  /** Lowercased provider name → DB rule profile */
+  providerDays: any[] = [];
+  coveragePattern: Record<string, number> = {};
+  /** Per-date staffing mode (6/7/8); not decremented during preload */
+  dayModes: Record<string, DayMode> = {};
   providerRuleProfiles: Record<string, SchedulerProviderProfile> = {};
+  mondayFtRuleActive = false;
 
-  schedule: Record<string, Record<string, string | null>> = {}; 
-  providerTotals: Record<string, { worked: number; weekends: number; nights: number; target: number; weekend_quota: number; night_quota: number }> = {};
+  schedule: Record<string, Record<string, string | null>> = {};
+  providerTotals: Record<string, {
+    worked: number;
+    weekends: number;
+    nights: number;
+    target: number;
+    weekend_quota: number;
+    night_quota: number;
+  }> = {};
   payPeriodTotals: Record<number, number> = {};
   warnings: string[] = [];
   violations: ScheduleViolation[] = [];
-  
-  // Night block recovery tracking
-  recoveryWindows: Map<string, Set<string>> = new Map(); // providerName -> Set of dates in recovery
-  
-  // Track which shift types have been assigned per date (to prevent duplicates)
-  assignedShiftsPerDate: Record<string, Set<string>> = {}; // date -> Set of shift codes already assigned
+  assignedShiftsPerDate: Record<string, Set<string>> = {};
 
   constructor() {}
 
@@ -54,600 +73,199 @@ export class HardScheduler {
     return this.providerRuleProfiles[(providerName || "").trim().toLowerCase()];
   }
 
-  // --------------------------------------------------------------------------
-  // LOAD PROVIDERS (merged with constraints)
-  // --------------------------------------------------------------------------
+  setMondayFtRuleActive(v: boolean) {
+    this.mondayFtRuleActive = v;
+  }
+
   loadProviders(providers: any[]) {
     this.providers = providers;
   }
 
-  // --------------------------------------------------------------------------
-  // LOAD PROVIDER DAYS extracted from parser
-  // --------------------------------------------------------------------------
   setProviderDays(providerDays: any[]) {
     this.providerDays = providerDays;
   }
 
-  // --------------------------------------------------------------------------
-  // SET COVERAGE PATTERN PER DATE
-  // --------------------------------------------------------------------------
   setCoveragePattern(pattern: Record<string, number>) {
-    this.coveragePattern = pattern;
-
-    // initialize schedule object and shift tracking for each date
-    Object.keys(pattern).forEach(date => {
-      this.schedule[date] = {};
-      this.assignedShiftsPerDate[date] = new Set();
-    });
+    this.coveragePattern = { ...pattern };
+    this.dayModes = {};
+    for (const date of Object.keys(pattern)) {
+      this.dayModes[date] = coverageToDayMode(pattern[date]);
+      this.schedule[date] = this.schedule[date] || {};
+      this.assignedShiftsPerDate[date] = this.assignedShiftsPerDate[date] || new Set();
+    }
   }
 
-  // --------------------------------------------------------------------------
-  // PRELOAD FIXED ASSIGNMENTS (from parser)
-  // This consumes coverage capacity before scheduling.
-  // --------------------------------------------------------------------------
   preloadAssignments() {
-    for (let provider of this.providerDays) {
+    for (const provider of this.providerDays) {
       const name = provider.name;
-
-      for (let day of provider.days) {
+      for (const day of provider.days) {
         const date = day.date;
-
-        // OFF block
+        if (!this.schedule[date]) this.schedule[date] = {};
         if (day.assigned === "OFF") {
           this.schedule[date][name] = "OFF";
           continue;
         }
-
-        // Preassigned real shift (like D1, A10...)
-        if (day.assigned && SHIFT_CODES.has(day.assigned)) {
-          this.schedule[date][name] = day.assigned;
-          
-          // Track the assigned shift type
-          if (!this.assignedShiftsPerDate[date]) {
-            this.assignedShiftsPerDate[date] = new Set();
+        if (day.assigned) {
+          const canon = (toCanonicalShift(day.assigned) ?? day.assigned) as string;
+          const inCatalog =
+            !!(SHIFT_DEFS as Record<string, unknown>)[canon] ||
+            canon === "C" ||
+            canon === "A10" ||
+            SHIFT_CODES.has(canon);
+          if (inCatalog) {
+            this.schedule[date][name] = canon;
+            if (!this.assignedShiftsPerDate[date]) {
+              this.assignedShiftsPerDate[date] = new Set();
+            }
+            const slotCode = (toCanonicalShift(canon) ?? canon) as string;
+            if (slotCode && slotCode !== "C" && slotCode !== "A10") {
+              this.assignedShiftsPerDate[date].add(slotCode);
+            }
           }
-          this.assignedShiftsPerDate[date].add(day.assigned);
-
-          // reduce coverage requirement
-          if (this.coveragePattern[date] > 0) {
-            this.coveragePattern[date] -= 1;
-          }
-
-          continue;
         }
       }
     }
   }
 
-  // --------------------------------------------------------------------------
-  // CHECK IF SHIFT IS ALLOWED FOR PROVIDER ON A GIVEN DATE
-  // Handles:
-  //   - Constraint overrides (Option A)
-  //   - Provider allowed_shifts
-  //   - Provider disallowed_shifts
-  //   - Weekend restrictions
-  //   - OFF always allowed
-  // --------------------------------------------------------------------------
-  isShiftAllowed(provider: any, providerDay: any, shift: string, date: string): boolean {
-
-    const constraint = providerDay.constraint;  // array of allowed shifts OR "OFF"
-
-    // If constraint exists (Option A): override all rules except OFF
-    if (constraint) {
-      if (shift === "OFF") return true;
-      return constraint.includes(shift);
-    }
-
-    // OFF always allowed (Option 2)
-    if (shift === "OFF") return true;
-
-    const prof = this.getRuleProfile(provider.name);
-    if (!isShiftEligibleForProfile(prof, shift)) return false;
-
-    // Normal rules apply...
-    const allowed = provider.allowed_shifts || [];
-    const disallowed = provider.rules?.disallowed_shifts || [];
-
-    if (allowed.length > 0 && !allowed.includes(shift)) return false;
-    if (disallowed.includes(shift)) return false;
-
-    // Weekend restrictions
-    const dayOfWeek = new Date(date).getDay(); // 0=Sun,6=Sat
-    if (dayOfWeek === 6 && provider.rules?.saturday_restrictions) {
-      const sat = provider.rules.saturday_restrictions.split(",").map((s: string) => s.trim());
-      if (!sat.includes(shift) && !sat.includes("all")) return false;
-    }
-    if (dayOfWeek === 0 && provider.rules?.sunday_restrictions) {
-      const sun = provider.rules.sunday_restrictions.split(",").map((s: string) => s.trim());
-      if (!sun.includes(shift) && !sun.includes("all")) return false;
-    }
-
-    return true;
+  private toSolverProviders(): SolverProviderRow[] {
+    return this.providers.map((p: any) => ({
+      name: p.name,
+      active: p.active !== false,
+      allowed_shifts: p.allowed_shifts,
+      rules: p.rules,
+    }));
   }
 
-  // --------------------------------------------------------------------------
-  // CHECK REST HOURS + NIGHT RECOVERY
-  // --------------------------------------------------------------------------
-  violatesRest(providerName: string, date: string, shift: string, provider: any): boolean {
-    // 48-hour rest AFTER the last night shift in a block.
-    // Allow consecutive nights within a block.
-    const dates = Object.keys(this.schedule).sort();
-    const idx = dates.indexOf(date);
-    const prev = idx > 0 ? dates[idx - 1] : null;
-    const prev2 = idx > 1 ? dates[idx - 2] : null;
-
-    const prevShift = prev ? this.schedule[prev]?.[providerName] : undefined;
-    const prev2Shift = prev2 ? this.schedule[prev2]?.[providerName] : undefined;
-
-    // If assigning a Night today, allow even if last night was yesterday (continue block)
-    if (isNightShiftToken(shift)) return false;
-
-    // If yesterday was a night and today is not a night -> violation
-    if (isNightShiftToken(prevShift) && shift !== 'OFF') return true;
-
-    // If two days ago was a night and yesterday was not -> still within 48h window
-    if (isNightShiftToken(prev2Shift) && !isNightShiftToken(prevShift) && shift !== 'OFF') return true;
-
-    return false;
+  private getSolverCell(providerName: string, date: string): SolverProviderDayCell | undefined {
+    const provider = this.providerDays.find(
+      (p: any) => p.name.trim().toLowerCase() === providerName.trim().toLowerCase(),
+    );
+    if (!provider) return undefined;
+    const day = provider.days.find((d: any) => d.date === date);
+    if (!day) return undefined;
+    return {
+      locked: day.locked,
+      assigned: day.assigned ?? null,
+      offCode: day.offCode ?? null,
+      constraint: day.constraint ?? null,
+    };
   }
 
-  getPreviousDate(date: string): string | null {
-    const keys = Object.keys(this.schedule).sort();
-    const i = keys.indexOf(date);
-    if (i <= 0) return null;
-    return keys[i - 1];
-  }
-
-  // --------------------------------------------------------------------------
-  // NIGHT BLOCK RECOVERY HELPERS
-  // --------------------------------------------------------------------------
-  
-  isNight(shift: string | null | undefined): boolean {
-    return isNightShiftToken(shift);
-  }
-
-  wasNightYesterday(providerName: string, date: string): boolean {
-    const prevDate = this.getPreviousDate(date);
-    if (!prevDate) return false;
-    const prevShift = this.schedule[prevDate]?.[providerName];
-    return this.isNight(prevShift);
-  }
-
-  isBlockEnding(providerName: string, date: string, currentShift: string): boolean {
-    // Block ends when:
-    // - Yesterday was N
-    // - Today is NOT N
-    const yesterday = this.getPreviousDate(date);
-    if (!yesterday) return false;
-    
-    const yesterdayShift = this.schedule[yesterday]?.[providerName];
-    return this.isNight(yesterdayShift) && !this.isNight(currentShift);
-  }
-
-  getRequiredRecoveryDays(providerName: string): number {
-    return recoveryDaysAfterNightBlock(this.getRuleProfile(providerName), 2);
-  }
-
-  enforcePostNightBlockRecovery(providerName: string, blockEndDate: string) {
-    const recoveryDays = this.getRequiredRecoveryDays(providerName);
-    const dates = Object.keys(this.schedule).sort();
-    const endIndex = dates.indexOf(blockEndDate);
-    
-    if (endIndex === -1) return;
-
-    // Initialize recovery set for this provider
-    if (!this.recoveryWindows.has(providerName)) {
-      this.recoveryWindows.set(providerName, new Set());
-    }
-    const recoverySet = this.recoveryWindows.get(providerName)!;
-
-    // Mark next recoveryDays as recovery period, and explicitly set OFF unless locked
-    for (let i = 1; i <= recoveryDays && endIndex + i < dates.length; i++) {
-      const recDate = dates[endIndex + i];
-      recoverySet.add(recDate);
-
-      // If not locked and not already assigned, force OFF
-      if (!this.isDateLocked(providerName, recDate) && !this.schedule[recDate][providerName]) {
-        this.schedule[recDate][providerName] = "OFF";
-      }
-    }
-  }
-
-  isInRecoveryWindow(providerName: string, date: string): boolean {
-    const recoverySet = this.recoveryWindows.get(providerName);
-    return recoverySet ? recoverySet.has(date) : false;
+  getProviderDay(providerName: string, date: string) {
+    const provider = this.providerDays.find((p: any) => p.name === providerName);
+    if (!provider) throw new Error(`Provider ${providerName} missing in parser output.`);
+    const day = provider.days.find((d: any) => d.date === date);
+    if (!day) throw new Error(`Missing day record for ${providerName} on ${date}`);
+    return day;
   }
 
   isDateLocked(providerName: string, date: string): boolean {
-    const providerDay = this.providerDays.find((p: any) => 
-      p.name.trim().toLowerCase() === providerName.trim().toLowerCase()
+    const providerDay = this.providerDays.find(
+      (p: any) => p.name.trim().toLowerCase() === providerName.trim().toLowerCase(),
     );
     if (!providerDay) return false;
-
     const day = providerDay.days.find((d: any) => d.date === date);
     return day?.locked === true;
   }
 
-  getCurrentNightCount(providerName: string): number {
-    let count = 0;
-    const dates = Object.keys(this.schedule).sort();
-    for (const date of dates) {
-      const shift = this.schedule[date]?.[providerName];
-      if (this.isNight(shift)) {
-        count++;
-      }
-    }
-    return count;
-  }
-
-  // --------------------------------------------------------------------------
-  // NIGHT BLOCK SIZE VALIDATION (for David Coffin)
-  // --------------------------------------------------------------------------
-  
-  getConsecutiveNightCount(providerName: string, endDate: string): number {
-    const dates = Object.keys(this.schedule).sort();
-    const endIndex = dates.indexOf(endDate);
-    if (endIndex === -1) return 0;
-
-    let count = 0;
-    for (let i = endIndex; i >= 0; i--) {
-      const shift = this.schedule[dates[i]]?.[providerName];
-      if (this.isNight(shift)) {
-        count++;
-      } else {
-        break;
-      }
-    }
-    return count;
-  }
-
-  canFormValidNightBlock(providerName: string, date: string): boolean {
-    const prof = this.getRuleProfile(providerName);
-    if (!prof?.night_only) return true;
-
-    const dates = Object.keys(this.schedule).sort();
-    const dateIndex = dates.indexOf(date);
-    if (dateIndex === -1) return false;
-
-    // Count consecutive nights before this date
-    const nightsBefore = this.getConsecutiveNightCount(providerName, dates[dateIndex - 1] || date);
-
-    const blockMax = prof.night_block_max_length ?? 4;
-    if (nightsBefore >= blockMax) return false;
-
-    // Look ahead to see how many consecutive nights are feasible after this date
-    const provider = this.providers.find(p => p.name.trim().toLowerCase() === providerName.trim().toLowerCase());
-    if (!provider) return false;
-
-    let canExtend = 0;
-    for (let i = dateIndex + 1; i < dates.length; i++) {
-      const d = dates[i];
-      // stop if in recovery window
-      if (this.isInRecoveryWindow(providerName, d)) break;
-      const pd = this.getProviderDay(providerName, d);
-
-      // If the date is locked to a non-night shift, stop
-      if (pd.locked && pd.assigned && !this.isNight(pd.assigned)) break;
-
-      // If locked night, ok to continue
-      if (pd.locked && pd.assigned && this.isNight(pd.assigned)) {
-        canExtend++;
-        continue;
-      }
-
-      // Otherwise check eligibility for N
-      if (this.isShiftAllowed(provider, pd, "N", d)) {
-        canExtend++;
-      } else {
-        break;
-      }
-
-      if (nightsBefore + 1 + canExtend >= blockMax) break;
-    }
-
-    const potential = nightsBefore + 1 + canExtend;
-    const blockMin = prof.night_block_min_length ?? 3;
-
-    if (potential < blockMin) return false;
-
-    if (nightsBefore + 1 > blockMax) return false;
-
-    return true;
-  }
-
-  validateNightBlockSize(providerName: string, blockEndDate: string): boolean {
-    const prof = this.getRuleProfile(providerName);
-    if (!prof?.night_only) return true;
-
-    const blockSize = this.getConsecutiveNightCount(providerName, blockEndDate);
-    const minL = prof.night_block_min_length ?? 3;
-    const maxL = prof.night_block_max_length ?? 4;
-    if (blockSize < minL || blockSize > maxL) {
-      this.warnings.push(
-        `${providerName}: Night block of ${blockSize} shifts (allowed ${minL}-${maxL}). Block ending ${blockEndDate}`,
-      );
-      return false;
-    }
-
-    return true;
-  }
-
-  // --------------------------------------------------------------------------
-  // STREAK LOGIC FOR CONSECUTIVE WORK DAYS
-  // --------------------------------------------------------------------------
-  
-  /**
-   * Check if provider should use streak logic (excludes Coffin, Lopez, Venugopal)
-   */
-  shouldUseStreakLogic(providerName: string): boolean {
-    const p = this.getRuleProfile(providerName);
-    return p?.counts_in_quotas !== false;
-  }
-
-  /**
-   * Get consecutive work days before this date
-   */
-  getWorkStreak(providerName: string, date: string): number {
-    const dates = Object.keys(this.schedule).sort();
-    const dateIndex = dates.indexOf(date);
-    if (dateIndex <= 0) return 0;
-
-    let streak = 0;
-    for (let i = dateIndex - 1; i >= 0; i--) {
-      const d = dates[i];
-      const shift = this.schedule[d]?.[providerName];
-      
-      if (isClinicalShift(shift)) {
-        streak++;
-      } else {
-        break;
-      }
-    }
-    return streak;
-  }
-
-  /**
-   * Check if provider can potentially work tomorrow (for 2-3 day blocks)
-   */
-  canWorkTomorrow(providerName: string, provider: any, date: string): boolean {
-    const dates = Object.keys(this.schedule).sort();
-    const dateIndex = dates.indexOf(date);
-    if (dateIndex >= dates.length - 1) return false;
-
-    const nextDate = dates[dateIndex + 1];
-    const nextProviderDay = this.getProviderDay(providerName, nextDate);
-    
-    // Check if tomorrow is locked or OFF
-    if (nextProviderDay.assigned === "OFF") return false;
-    if (nextProviderDay.locked && nextProviderDay.assigned) return false;
-    
-    // Basic eligibility check (simplified)
-    return true;
-  }
-
-  /**
-   * Score provider for assignment on this date (higher = better)
-   */
-  scoreProviderForDate(providerName: string, provider: any, date: string): number {
-    if (!this.shouldUseStreakLogic(providerName)) {
-      return 0; // Neutral score for excluded providers
-    }
-
-    const streak = this.getWorkStreak(providerName, date);
-    const canContinue = this.canWorkTomorrow(providerName, provider, date);
-
-    // Prefer continuing 1-2 day streaks
-    if (streak === 1 || streak === 2) {
-      return 10 + streak; // Priority: complete 2-3 day blocks
-    }
-
-    // Avoid creating single-day assignments
-    if (streak === 1 && !canContinue) {
-      return -10; // Bad: creates isolated work day
-    }
-
-    // Fresh start (no recent work) is good
-    if (streak === 0) {
-      return 5; // Good for starting new block
-    }
-
-    // Already worked 3+ days in a row - lower priority
-    if (streak >= 3) {
-      return -5;
-    }
-
-    return 0; // Neutral
-  }
-
-  // --------------------------------------------------------------------------
-  // MAIN SOLVER
-  // --------------------------------------------------------------------------
-  solve() {
+  solve(): HardSolveResult {
     this.violations = [];
-    // preload fixed assignments
+    this.warnings = [];
     this.preloadAssignments();
-    
-    // Scan preassigned shifts to detect and enforce existing night block recoveries
+
     const dates = Object.keys(this.schedule).sort();
-    for (const providerData of this.providerDays) {
-      const providerName = providerData.name;
-      
-      for (let i = 0; i < dates.length; i++) {
-        const date = dates[i];
-        const shift = this.schedule[date]?.[providerName];
-        
-        // Check if a night block is ending
-        if (shift && !this.isNight(shift) && this.wasNightYesterday(providerName, date)) {
-          const prevDate = this.getPreviousDate(date);
-          if (prevDate) {
-            this.validateNightBlockSize(providerName, prevDate);
-          }
-          this.enforcePostNightBlockRecovery(providerName, date);
-        }
-      }
-      
-      // Check if month ends with an incomplete night block
-      const lastDate = dates[dates.length - 1];
-      const lastShift = this.schedule[lastDate]?.[providerName];
-      if (this.isNight(lastShift)) {
-        this.validateNightBlockSize(providerName, lastDate);
-      }
-    }
+    const profiles = this.providerRuleProfiles;
+    const sp = this.toSolverProviders();
 
-    for (let date of dates) {
-      let coverageNeeded = this.coveragePattern[date] || 0;
-
-      if (coverageNeeded <= 0) continue; // all covered by preassignments
-
-      // Sort providers by streak score for this date (highest first)
-      const scoredProviders = this.providers.map(provider => ({
-        provider,
-        score: this.scoreProviderForDate(provider.name, provider, date)
-      })).sort((a, b) => b.score - a.score);
-
-      for (let { provider } of scoredProviders) {
-        if (coverageNeeded <= 0) break;
-
-        const providerDay = this.getProviderDay(provider.name, date);
-
-        // Already scheduled due to preassignment?
-        if (this.schedule[date][provider.name]) continue;
-
-        // OFF block?
-        if (providerDay.assigned === "OFF") continue;
-
-        // Check if in recovery window (unless date is locked)
-        if (this.isInRecoveryWindow(provider.name, date) && !this.isDateLocked(provider.name, date)) {
-          continue;
-        }
-
-        // Try assigning each shift
-        for (let shift of SHIFT_CODES) {
-          // Check if this shift type is already assigned to someone else today
-          if (this.assignedShiftsPerDate[date]?.has(shift)) {
-            continue; // Skip - this shift type is already taken today
-          }
-
-          // rest-hour check
-          if (this.violatesRest(provider.name, date, shift, provider))
-            continue;
-
-          // rule/constraint eligibility
-          if (!this.isShiftAllowed(provider, providerDay, shift, date))
-            continue;
-
-          if (this.isNight(shift) && !this.canFormValidNightBlock(provider.name, date)) {
-            continue;
-          }
-
-          const prof = this.getRuleProfile(provider.name);
-          const cap = prof?.monthly_max_nights;
-          if (cap != null && this.isNight(shift) && this.getCurrentNightCount(provider.name) >= cap) {
-            continue;
-          }
-
-          // Check if provider is at or exceeding night quota (soft limit)
-          if (this.isNight(shift)) {
-            const providerData = this.providerDays.find((p: any) => p.name === provider.name);
-            const nightQuota = providerData?.night_quota || 0;
-            const currentNights = this.getCurrentNightCount(provider.name);
-            if (currentNights >= nightQuota + 1) {
-              continue; // Try to avoid exceeding quota by more than 1
-            }
-          }
-
-          // assign
-          this.schedule[date][provider.name] = shift;
-          
-          // Track the assigned shift type
-          if (!this.assignedShiftsPerDate[date]) {
-            this.assignedShiftsPerDate[date] = new Set();
-          }
-          this.assignedShiftsPerDate[date].add(shift);
-          
-          // Track night blocks and enforce recovery
-          if (this.isNight(shift)) {
-            // Provider assigned a night shift - track but don't enforce recovery yet
-          } else if (this.wasNightYesterday(provider.name, date)) {
-            // Block is ending - validate size and enforce recovery
-            const prevDate = this.getPreviousDate(date);
-            if (prevDate) {
-              this.validateNightBlockSize(provider.name, prevDate);
-            }
-            this.enforcePostNightBlockRecovery(provider.name, date);
-          }
-          
-          coverageNeeded -= 1;
-          break;
-        }
-      }
-
-      if (coverageNeeded > 0) {
-        this.violations.push({
-          type: "coverage_unfilled",
-          date,
-          message: `Cannot satisfy coverage for ${date}; ${coverageNeeded} slot(s) unfilled.`,
-        });
-        break;
-      }
-    }
-
-    this.computeTotals();
-    const dates = Object.keys(this.schedule).sort();
-    for (const p of this.providers) {
-      const name = p.name;
-      if (maxConsecutiveClinicalDays(this.schedule, name, dates) > 4) {
-        this.violations.push({
-          type: "max_consecutive_clinical",
-          provider: name,
-          message: "Exceeds 4 consecutive clinical days",
-        });
-      }
-      if (maxClinicalInRolling7(this.schedule, name, dates) > 4) {
-        this.violations.push({
-          type: "rolling_7_clinical",
-          provider: name,
-          message: "Exceeds 4 clinical shifts in a rolling 7-day window",
-        });
-      }
-      this.violations.push(...circadianRatchetViolations(this.schedule, name, dates));
-    }
-
-    return {
+    const { violations: genViol, softScores } = runMonthSolve({
+      dates,
+      dayMode: (d) => this.dayModes[d] ?? coverageToDayMode(this.coveragePattern[d] ?? 8),
+      mondayFtRuleActive: this.mondayFtRuleActive,
       schedule: this.schedule,
+      assignedByDate: this.assignedShiftsPerDate,
+      providers: sp,
+      getCell: (name, date) => this.getSolverCell(name, date),
+      profiles,
+    });
+    this.violations.push(...genViol);
+    this.computeTotals();
+    const success = this.violations.length === 0;
+    return {
+      success,
+      schedule: success ? this.toGeneratedSchedule() : null,
+      violations: this.violations,
+      softScores,
       providerTotals: this.providerTotals,
       payPeriodTotals: this.payPeriodTotals,
       warnings: this.warnings,
-      violations: this.violations,
-      success: this.violations.length === 0,
-      softScores: {
-        isolatedShifts: 0,
-        circadianFlips: 0,
-        shiftFairnessVariance: 0,
-        callFairnessVariance: 0,
-        weekendFairnessVariance: 0,
-      },
     };
   }
 
-  // --------------------------------------------------------------------------
-  // UTILITY: find the providerDay entry
-  // --------------------------------------------------------------------------
-  getProviderDay(providerName: string, date: string) {
-    const provider = this.providerDays.find((p: any) => p.name === providerName);
-    if (!provider) throw new Error(`Provider ${providerName} missing in parser output.`);
+  toGeneratedSchedule() {
+    const dates = Object.keys(this.schedule).sort();
+    return dates.map((date) => {
+      const dow = new Date(date + "T12:00:00").getDay();
+      const mode = this.dayModes[date] ?? coverageToDayMode(this.coveragePattern[date] ?? 8);
+      const required = requiredShiftsForDay(mode, dow, this.mondayFtRuleActive);
+      const assignments: {
+        shift: string;
+        provider: string;
+        locked?: boolean;
+        unfilled?: boolean;
+      }[] = [];
 
-    const day = provider.days.find((d: any) => d.date === date);
-    if (!day) throw new Error(`Missing day record for ${providerName} on ${date}`);
+      for (const shift of required) {
+        let provider = "";
+        let locked = false;
+        for (const p of this.providers) {
+          const raw = this.schedule[date]?.[p.name];
+          if (!raw || raw === "OFF") continue;
+          const canon = (toCanonicalShift(raw) ?? raw) as string;
+          if (canon === shift) {
+            provider = p.name;
+            try {
+              const pd = this.getProviderDay(p.name, date);
+              locked = !!pd.locked && pd.assigned === raw;
+            } catch {
+              locked = false;
+            }
+            break;
+          }
+        }
+        assignments.push({ shift, provider, locked, unfilled: !provider });
+      }
 
-    return day;
+      for (const p of this.providers) {
+        const raw = this.schedule[date]?.[p.name];
+        if (!raw || raw === "OFF") continue;
+        const canon = (toCanonicalShift(raw) ?? raw) as string;
+        if (canon === "C" || canon === "A10") {
+          const exists = assignments.some((a) => a.shift === canon && a.provider === p.name);
+          if (!exists) {
+            let locked = false;
+            try {
+              const pd = this.getProviderDay(p.name, date);
+              locked = !!pd.locked;
+            } catch {
+              locked = false;
+            }
+            assignments.push({ shift: canon, provider: p.name, locked, unfilled: false });
+          }
+        }
+      }
+
+      return {
+        date,
+        dayOfWeek: dow,
+        coverage: mode,
+        mode,
+        required,
+        assignments,
+      };
+    });
   }
 
-  // --------------------------------------------------------------------------
-  // COMPUTE TOTALS (per provider + per pay period)
-  // --------------------------------------------------------------------------
   computeTotals() {
-    // Initialize totals from providerDays
     for (const providerData of this.providerDays) {
       const name = providerData.name;
       this.providerTotals[name] = {
@@ -661,27 +279,23 @@ export class HardScheduler {
     }
 
     const dates = Object.keys(this.schedule).sort();
-
     let ppCounter = 1;
-    for (let date of dates) {
+    for (const date of dates) {
       this.payPeriodTotals[ppCounter] = this.payPeriodTotals[ppCounter] || 0;
-
-      for (let providerName in this.schedule[date]) {
+      for (const providerName in this.schedule[date]) {
         const shift = this.schedule[date][providerName];
         if (isClinicalShift(shift) && shift !== "C" && shift !== "A10") {
           this.providerTotals[providerName].worked += 1;
-          const dow = new Date(date).getDay();
+          const dow = new Date(date + "T12:00:00").getDay();
           if (dow === 0 || dow === 6) {
             this.providerTotals[providerName].weekends += 1;
           }
-          if (this.isNight(shift)) {
+          if (isNightShiftToken(shift)) {
             this.providerTotals[providerName].nights += 1;
           }
           this.payPeriodTotals[ppCounter] += 1;
         }
       }
-
-      // bump PP counter every 14 days
       if (ppCounter < 14) ppCounter++;
       else ppCounter = 1;
     }

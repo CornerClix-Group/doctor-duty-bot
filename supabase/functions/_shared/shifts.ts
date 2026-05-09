@@ -56,6 +56,8 @@ export const SHIFT_ALIASES: Record<string, ShiftCode> = {
   "14": "MIDB",
   "16": "E",
   "21": "N",
+  A: "A10",
+  a: "A10",
   "FT 7a": "FT AM",
   "FT 2p": "FT PM",
   "FT W9": "FT 9",

@@ -5,8 +5,11 @@
 import {
   REGULAR_SHIFTS,
   SHIFT_DEFS,
+  requiredShiftsForDay,
   toCanonicalShift,
+  type DayMode,
   type ShiftCode,
+  type ShiftDef,
 } from "./shifts.ts";
 
 export type ViolationType =
@@ -40,6 +43,16 @@ export interface SchedulerProviderProfile {
   requires_80hr_pp?: boolean | null;
   provider_group?: string | null;
   counts_in_quotas?: boolean | null;
+}
+
+/** @alias */
+export type ProviderRuleProfile = SchedulerProviderProfile;
+
+export interface PlacementCheckContext {
+  dayMode: (date: string) => DayMode;
+  mondayFtRuleActive: boolean;
+  shiftDefs?: Record<string, ShiftDef>;
+  shiftAliases?: Record<string, ShiftCode>;
 }
 
 const OFF_BREAK_STREAK = new Set([
@@ -163,4 +176,247 @@ export function circadianRatchetViolations(
     prevStart = start;
   }
   return out;
+}
+
+function trialSchedule(
+  schedule: Record<string, Record<string, string | null>>,
+  date: string,
+  providerName: string,
+  shift: ShiftCode,
+): Record<string, Record<string, string | null>> {
+  const row = { ...(schedule[date] || {}), [providerName]: shift };
+  return { ...schedule, [date]: row };
+}
+
+function consecutiveNightsEndingAt(
+  schedule: Record<string, Record<string, string | null>>,
+  providerName: string,
+  dates: string[],
+  endIdx: number,
+): number {
+  let n = 0;
+  for (let i = endIdx; i >= 0; i--) {
+    const s = schedule[dates[i]]?.[providerName];
+    if (isNightShiftToken(s)) n++;
+    else break;
+  }
+  return n;
+}
+
+function lastCompletedNightBlockLastNightIdx(
+  schedule: Record<string, Record<string, string | null>>,
+  providerName: string,
+  dates: string[],
+  beforeIdx: number,
+): number {
+  let i = beforeIdx - 1;
+  let lastN = -1;
+  while (i >= 0) {
+    if (isNightShiftToken(schedule[dates[i]]?.[providerName])) {
+      lastN = i;
+      break;
+    }
+    i--;
+  }
+  if (lastN < 0) return -1;
+  let j = lastN;
+  while (j > 0 && isNightShiftToken(schedule[dates[j - 1]]?.[providerName])) j--;
+  return lastN;
+}
+
+function nightCleanWindowViolation(
+  schedule: Record<string, Record<string, string | null>>,
+  providerName: string,
+  date: string,
+  shift: ShiftCode,
+  dates: string[],
+  prof: SchedulerProviderProfile,
+): ScheduleViolation | null {
+  if (!prof.night_only || !isNightShiftToken(shift)) return null;
+  const cleanN = prof.nights_clean_days_after_block ?? 3;
+  const idx = dates.indexOf(date);
+  if (idx <= 0) return null;
+  const continuing = isNightShiftToken(schedule[dates[idx - 1]]?.[providerName]);
+  if (continuing) return null;
+  const lastNIdx = lastCompletedNightBlockLastNightIdx(schedule, providerName, dates, idx);
+  if (lastNIdx < 0) return null;
+  const firstAfter = lastNIdx + 1;
+  if (idx >= firstAfter && idx < firstAfter + cleanN) {
+    return {
+      type: "nights_clean_window",
+      provider: providerName,
+      date,
+      shift,
+      message: `Night within ${cleanN}-day clean window after prior block`,
+    };
+  }
+  return null;
+}
+
+function nightBlockLengthViolation(
+  schedule: Record<string, Record<string, string | null>>,
+  providerName: string,
+  date: string,
+  shift: ShiftCode,
+  dates: string[],
+  prof: SchedulerProviderProfile,
+): ScheduleViolation | null {
+  if (!prof.night_only || !isNightShiftToken(shift)) return null;
+  const minL = prof.night_block_min_length ?? 3;
+  const maxL = prof.night_block_max_length ?? 4;
+  const idx = dates.indexOf(date);
+  const yN = idx > 0 && isNightShiftToken(schedule[dates[idx - 1]]?.[providerName]);
+  const nBefore = yN ? consecutiveNightsEndingAt(schedule, providerName, dates, idx - 1) : 0;
+  const streakAfter = nBefore + 1;
+
+  if (!yN && minL >= 3 && streakAfter < minL) {
+    if (idx + (minL - streakAfter) > dates.length) {
+      return {
+        type: "night_block_length",
+        provider: providerName,
+        date,
+        shift,
+        message: `Cannot complete minimum ${minL}-night block before month end`,
+      };
+    }
+  }
+
+  if (streakAfter > maxL) {
+    return {
+      type: "night_block_length",
+      provider: providerName,
+      date,
+      shift,
+      message: `Would exceed max night block ${maxL}`,
+    };
+  }
+  return null;
+}
+
+/**
+ * Returns null if (provider, date, shift) is legal under hard rules given current schedule.
+ */
+export function checkPlacement(
+  schedule: Record<string, Record<string, string | null>>,
+  providerName: string,
+  profile: ProviderRuleProfile | undefined,
+  date: string,
+  shift: ShiftCode,
+  dates: string[],
+  context: PlacementCheckContext,
+): ScheduleViolation | null {
+  const defs = context.shiftDefs ?? SHIFT_DEFS;
+
+  if (!isShiftEligibleForProfile(profile, shift)) {
+    return {
+      type: "eligibility",
+      provider: providerName,
+      date,
+      shift,
+      message: `Shift ${shift} not eligible for this provider profile`,
+    };
+  }
+
+  const dow = new Date(date + "T12:00:00").getDay();
+  const mode = context.dayMode(date);
+  const req = requiredShiftsForDay(mode, dow, context.mondayFtRuleActive);
+  if (!req.includes(shift)) {
+    return {
+      type: "eligibility",
+      provider: providerName,
+      date,
+      shift,
+      message: `Shift ${shift} not in required set for mode ${mode} (weekday ${dow})`,
+    };
+  }
+
+  const row = schedule[date] || {};
+  for (const [p, s] of Object.entries(row)) {
+    if (s === shift && p !== providerName) {
+      return {
+        type: "eligibility",
+        provider: providerName,
+        date,
+        shift,
+        message: `${shift} already assigned to ${p} on ${date}`,
+      };
+    }
+  }
+
+  const existing = row[providerName];
+  if (existing && existing !== "OFF" && existing !== shift) {
+    return {
+      type: "eligibility",
+      provider: providerName,
+      date,
+      message: `Provider already assigned ${existing} on ${date}`,
+    };
+  }
+
+  const trial = trialSchedule(schedule, date, providerName, shift);
+
+  if (maxConsecutiveClinicalDays(trial, providerName, dates) > 4) {
+    return {
+      type: "max_consecutive_clinical",
+      provider: providerName,
+      date,
+      shift,
+      message: "Would exceed 4 consecutive clinical days",
+    };
+  }
+
+  if (maxClinicalInRolling7(trial, providerName, dates) > 4) {
+    return {
+      type: "rolling_7_clinical",
+      provider: providerName,
+      date,
+      shift,
+      message: "Would exceed 4 clinical shifts in a 7-day window",
+    };
+  }
+
+  const idx = dates.indexOf(date);
+  if (idx > 0) {
+    const prevD = dates[idx - 1];
+    const prevS = trial[prevD]?.[providerName];
+    if (isClinicalShift(prevS) && isClinicalShift(shift)) {
+      const cPrev = (toCanonicalShift(prevS!) ?? prevS!) as ShiftCode;
+      const cNew = (toCanonicalShift(shift) ?? shift) as ShiftCode;
+      const startP = defs[cPrev]?.startHour ?? 0;
+      const startN = defs[cNew]?.startHour ?? 0;
+      if (startN < startP) {
+        return {
+          type: "circadian_ratchet",
+          provider: providerName,
+          date,
+          shift,
+          message: `Circadian: start ${startN} < previous ${startP}`,
+        };
+      }
+    }
+  }
+
+  if (profile?.night_only && isNightShiftToken(shift)) {
+    const nc = nightCleanWindowViolation(schedule, providerName, date, shift, dates, profile);
+    if (nc) return nc;
+    const nb = nightBlockLengthViolation(schedule, providerName, date, shift, dates, profile);
+    if (nb) return nb;
+    if (profile.monthly_max_nights != null) {
+      let nightN = 0;
+      for (const d of dates) {
+        if (isNightShiftToken(trial[d]?.[providerName])) nightN++;
+      }
+      if (nightN > profile.monthly_max_nights) {
+        return {
+          type: "monthly_max_nights",
+          provider: providerName,
+          date,
+          shift,
+          message: `Monthly night cap ${profile.monthly_max_nights} exceeded`,
+        };
+      }
+    }
+  }
+
+  return null;
 }
