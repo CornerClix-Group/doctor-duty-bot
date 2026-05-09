@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -13,6 +13,7 @@ import { PublishPanel } from '@/components/publish/PublishPanel';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { motion } from 'framer-motion';
 import { exportScheduleToExcel } from '@/lib/scheduleExporterExcel';
+import { getNextMonthAndYear } from '@/lib/dateUtils';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -32,9 +33,18 @@ const MONTHS = [
 
 export default function GenerateSchedule() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { toast } = useToast();
-  const [month, setMonth] = useState('January');
-  const [year, setYear] = useState(2026);
+  const [month, setMonth] = useState(() => {
+    const fromUrl = searchParams.get('month');
+    if (fromUrl && MONTHS.includes(fromUrl)) return fromUrl;
+    return getNextMonthAndYear().month;
+  });
+  const [year, setYear] = useState(() => {
+    const fromUrl = parseInt(searchParams.get('year') || '', 10);
+    if (!isNaN(fromUrl)) return fromUrl;
+    return getNextMonthAndYear().year;
+  });
   const [uploadedData, setUploadedData] = useState<any>(null);
   const [uploadedFileBase64, setUploadedFileBase64] = useState<string | null>(null);
   const [generatedSchedule, setGeneratedSchedule] = useState<any>(null);
@@ -42,26 +52,54 @@ export default function GenerateSchedule() {
   // Convert month name to 1-12 number for ScheduleUpload
   const selectedMonthNumber = MONTHS.indexOf(month) + 1;
 
+  const yearOptions = (() => {
+    const currentYear = new Date().getFullYear();
+    return [currentYear, currentYear + 1, currentYear + 2];
+  })();
+
   const handleSaveSchedule = async () => {
     if (!generatedSchedule) return;
 
     try {
-      const { error } = await supabase
+      const userId = (await supabase.auth.getUser()).data.user?.id;
+      const payload = {
+        month,
+        year,
+        schedule_data: generatedSchedule.schedule,
+        assignments: generatedSchedule.schedule,
+        provider_totals: generatedSchedule.provider_totals || generatedSchedule.providerTotals || {},
+        validation_results: {
+          errors: generatedSchedule.errors || [],
+          warnings: generatedSchedule.warnings || [],
+          info: generatedSchedule.info || [],
+        },
+        pp_hours: generatedSchedule.pp_hours || {},
+        coverage_pattern: generatedSchedule.coverage_pattern || null,
+        base_coverage_value: generatedSchedule.base_coverage_value ?? 6,
+        created_by: userId,
+        status: 'draft' as const,
+      };
+
+      const { data: existing } = await supabase
         .from('schedules')
-        .insert({
-          month,
-          year,
-          schedule_data: generatedSchedule.schedule,
-          provider_totals: generatedSchedule.provider_totals || generatedSchedule.providerTotals,
-          created_by: (await supabase.auth.getUser()).data.user?.id,
-          status: 'draft'
-        });
+        .select('id')
+        .eq('month', month)
+        .eq('year', year)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      const { error } = existing?.id
+        ? await supabase.from('schedules').update(payload).eq('id', existing.id)
+        : await supabase.from('schedules').insert(payload);
 
       if (error) throw error;
 
       toast({
         title: 'Schedule Saved',
-        description: 'Schedule has been saved as draft',
+        description: existing?.id
+          ? 'Existing draft updated for this month'
+          : 'Schedule has been saved as draft',
       });
     } catch (error: any) {
       console.error('Error saving schedule:', error);
@@ -166,8 +204,10 @@ export default function GenerateSchedule() {
               <Sparkles className="h-6 w-6 text-primary" />
             </div>
             <div>
-              <h1 className="text-3xl font-bold text-foreground">AI Schedule Generator</h1>
-              <p className="text-muted-foreground">Generate optimal schedules using AI</p>
+              <h1 className="text-3xl font-bold text-foreground">Schedule Generator</h1>
+              <p className="text-muted-foreground">
+                {month} {year} — your next open period. Change above if you&apos;re working on a different month.
+              </p>
             </div>
           </div>
           <Button
@@ -208,7 +248,7 @@ export default function GenerateSchedule() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {[2026, 2027].map(y => (
+                    {yearOptions.map(y => (
                       <SelectItem key={y} value={y.toString()}>{y}</SelectItem>
                     ))}
                   </SelectContent>
@@ -222,8 +262,12 @@ export default function GenerateSchedule() {
           <CardHeader>
             <div className="flex items-center justify-between">
               <div>
-                <CardTitle>Optional: Upload Existing Schedule</CardTitle>
-                <CardDescription>Upload an Excel template with existing assignments</CardDescription>
+                <CardTitle>Step 1 — Upload your template</CardTitle>
+                <CardDescription>
+                  Download a template pre-filled with your current providers and prior pay-period carry-over.
+                  Add leave, constraints, and any pre-assigned shifts in Excel, then upload it back.
+                  We&apos;ll respect everything you&apos;ve locked in.
+                </CardDescription>
               </div>
               {uploadedData && (
                 <AlertDialog>
@@ -245,6 +289,7 @@ export default function GenerateSchedule() {
                       <AlertDialogAction 
                         onClick={() => {
                           setUploadedData(null);
+                          setUploadedFileBase64(null);
                           toast({
                             title: 'Upload Deleted',
                             description: 'The uploaded schedule has been removed',
@@ -264,8 +309,28 @@ export default function GenerateSchedule() {
             <ScheduleUpload 
               key={uploadedData ? 'uploaded' : 'empty'} 
               onScheduleLoad={(data, base64) => {
+                const nameRaw = String(data.month ?? '').trim();
+                const fileMonth =
+                  MONTHS.find((m) => m.toLowerCase() === nameRaw.toLowerCase()) ?? nameRaw;
+                const parsedYear =
+                  typeof data.year === 'number' ? data.year : parseInt(String(data.year), 10);
+
+                const monthChanged = fileMonth !== month;
+                const yearChanged = !Number.isNaN(parsedYear) && parsedYear !== year;
+
+                if (monthChanged || yearChanged) {
+                  setMonth(fileMonth);
+                  if (!Number.isNaN(parsedYear)) {
+                    setYear(parsedYear);
+                  }
+                  const displayYear = Number.isNaN(parsedYear) ? year : parsedYear;
+                  toast({
+                    title: `Switched to ${fileMonth} ${displayYear}`,
+                    description: 'Matched the period to your uploaded file.',
+                  });
+                }
                 setUploadedData(data);
-                setUploadedFileBase64(base64 || null);
+                setUploadedFileBase64(base64 ?? null);
               }}
               selectedMonth={selectedMonthNumber}
               selectedYear={year}
@@ -296,14 +361,25 @@ export default function GenerateSchedule() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.18, ease: [0.32, 0.72, 0, 1] }}
             >
-              <ScheduleWorkbench
+              {uploadedData ? (
+                <ScheduleWorkbench
                   month={month}
                   year={year}
                   uploadedFileBase64={uploadedFileBase64}
                   uploadedData={uploadedData}
                   onScheduleGenerated={setGeneratedSchedule}
                   generatedSchedule={generatedSchedule}
-              />
+                />
+              ) : (
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Step 1: Upload a template</CardTitle>
+                    <CardDescription>
+                      Upload an Excel schedule template above to unlock AI generation.
+                    </CardDescription>
+                  </CardHeader>
+                </Card>
+              )}
             </motion.div>
           </TabsContent>
           <TabsContent value="edit" className="pt-4">

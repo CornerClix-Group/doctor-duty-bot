@@ -1,28 +1,77 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { 
-  Activity, 
-  Calendar, 
-  Users, 
-  Clock, 
-  TrendingUp, 
+import { formatDistanceToNow } from 'date-fns';
+import {
+  Activity,
+  Calendar,
+  Users,
   FileSpreadsheet,
-  Plus,
   History,
   Settings,
   LogOut,
   Sparkles,
   UserCircle,
-  FileText,
-  MessageSquare,
-  Mail
+  Mail,
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
 import { PublishedScheduleViewer } from '@/components/PublishedScheduleViewer';
+import { HeroNextPeriod } from '@/components/dashboard/HeroNextPeriod';
+import { getNextMonthAndYear } from '@/lib/dateUtils';
+
+type HeroState = {
+  month: string;
+  year: number;
+  status: string;
+  errorCount: number;
+  warnCount: number;
+  lockedAt: string | null;
+  publishedAt: string | null;
+  lastUpdated: string | null;
+};
+
+type ScheduleActivityRow = {
+  id: string;
+  month: string;
+  year: number;
+  status: string;
+  updated_at: string;
+  created_by: string | null;
+  actor_email: string | null;
+};
+
+function defaultHeroState(): HeroState {
+  const { month, year } = getNextMonthAndYear();
+  return {
+    month,
+    year,
+    status: 'not_started',
+    errorCount: 0,
+    warnCount: 0,
+    lockedAt: null,
+    publishedAt: null,
+    lastUpdated: null,
+  };
+}
+
+function activityStatusBadge(status: string) {
+  switch (status) {
+    case 'published':
+      return <Badge className="bg-green-600 hover:bg-green-600 capitalize">{status}</Badge>;
+    case 'locked':
+      return <Badge variant="secondary" className="capitalize">{status}</Badge>;
+    case 'draft':
+    case 'validated':
+    case 'solved':
+      return <Badge variant="outline" className="capitalize">{status}</Badge>;
+    default:
+      return <Badge variant="outline" className="capitalize">{status}</Badge>;
+  }
+}
 
 const Dashboard = () => {
   const navigate = useNavigate();
@@ -32,12 +81,15 @@ const Dashboard = () => {
   const handleSignOut = async () => {
     await signOut();
     toast({
-      title: "Signed out",
-      description: "You have been successfully signed out.",
+      title: 'Signed out',
+      description: 'You have been successfully signed out.',
     });
   };
 
   const [activeProviders, setActiveProviders] = useState<number | null>(null);
+  const [hero, setHero] = useState<HeroState>(defaultHeroState);
+  const [activityState, setActivityState] = useState<'pending' | 'hidden' | 'ready'>('pending');
+  const [activityRows, setActivityRows] = useState<ScheduleActivityRow[]>([]);
 
   useEffect(() => {
     let isMounted = true;
@@ -54,36 +106,58 @@ const Dashboard = () => {
     };
   }, []);
 
-  const stats = [
-    {
-      title: 'Active Providers',
-      value: String(activeProviders ?? '—'),
-      change: '+2 this month',
-      icon: Users,
-      color: 'text-primary'
-    },
-    {
-      title: 'Schedules Created',
-      value: '8',
-      change: 'Last 30 days',
-      icon: Calendar,
-      color: 'text-secondary'
-    },
-    {
-      title: 'Avg Fill Rate',
-      value: '98.5%',
-      change: '+2.4% from last month',
-      icon: TrendingUp,
-      color: 'text-accent'
-    },
-    {
-      title: 'Hours Scheduled',
-      value: '2,480',
-      change: 'This month',
-      icon: Clock,
-      color: 'text-medical-teal'
-    }
-  ];
+  useEffect(() => {
+    let isMounted = true;
+    (async () => {
+      try {
+        const { data, error } = await supabase.rpc('get_next_open_period');
+        if (error) throw error;
+        const row = Array.isArray(data) ? data[0] : data;
+        if (!isMounted) return;
+        if (row && typeof row === 'object' && 'month' in row) {
+          setHero({
+            month: row.month as string,
+            year: row.year as number,
+            status: row.status as string,
+            errorCount: (row.error_count as number) ?? 0,
+            warnCount: (row.warn_count as number) ?? 0,
+            lockedAt: (row.locked_at as string | null) ?? null,
+            publishedAt: (row.published_at as string | null) ?? null,
+            lastUpdated: (row.updated_at as string | null) ?? null,
+          });
+        } else {
+          setHero(defaultHeroState());
+        }
+      } catch {
+        if (!isMounted) return;
+        setHero(defaultHeroState());
+      }
+    })();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+    (async () => {
+      try {
+        const { data, error } = await supabase.rpc('get_recent_schedule_activity', {
+          limit_n: 5,
+        });
+        if (error) throw error;
+        if (!isMounted) return;
+        setActivityRows((data as ScheduleActivityRow[]) ?? []);
+        setActivityState('ready');
+      } catch {
+        if (!isMounted) return;
+        setActivityState('hidden');
+      }
+    })();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const allActions = [
     {
@@ -140,8 +214,8 @@ const Dashboard = () => {
       icon: History,
       action: () => {
         toast({
-          title: "Coming Soon",
-          description: "Schedule history feature will be available soon.",
+          title: 'Coming Soon',
+          description: 'Schedule history feature will be available soon.',
         });
       },
       variant: 'outline' as const,
@@ -153,8 +227,8 @@ const Dashboard = () => {
       icon: Settings,
       action: () => {
         toast({
-          title: "Coming Soon",
-          description: "Shift change request feature will be available soon.",
+          title: 'Coming Soon',
+          description: 'Shift change request feature will be available soon.',
         });
       },
       variant: 'outline' as const,
@@ -162,80 +236,64 @@ const Dashboard = () => {
     },
   ];
 
-  const quickActions = allActions.filter(action => 
-    !action.roles || (role && action.roles.includes(role))
+  const quickActions = allActions.filter(
+    (action) => !action.roles || (role && action.roles.includes(role)),
   );
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5">
-      {/* Header */}
       <header className="border-b border-border/40 bg-card/50 backdrop-blur-sm sticky top-0 z-50">
-          <div className="container mx-auto px-4 py-6">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="rounded-xl bg-gradient-to-br from-primary to-secondary p-3 shadow-lg">
-                  <Activity className="h-8 w-8 text-white" />
-                </div>
-                <div>
-                  <h1 className="text-3xl font-semibold tracking-tight text-foreground">
-                    EMSchedule
-                  </h1>
-                  <p className="text-sm text-muted-foreground">
-                    Effortless physician scheduling
-                  </p>
-                </div>
+        <div className="container mx-auto px-4 py-6">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="rounded-xl bg-gradient-to-br from-primary to-secondary p-3 shadow-lg">
+                <Activity className="h-8 w-8 text-white" />
               </div>
-              <div className="flex items-center gap-4">
-                <div className="text-right mr-4">
-                  <p className="text-sm font-medium text-foreground">{user?.email}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {role === 'admin' ? 'Master Admin' : role === 'provider' ? 'Provider' : 'Read Only'}
-                  </p>
-                </div>
-                <Button variant="outline" size="icon" onClick={handleSignOut}>
-                  <LogOut className="h-5 w-5" />
-                </Button>
+              <div>
+                <h1 className="text-3xl font-semibold tracking-tight text-foreground">EMSchedule</h1>
+                <p className="text-sm text-muted-foreground">Effortless physician scheduling</p>
               </div>
             </div>
+            <div className="flex items-center gap-4">
+              <div className="text-right mr-4">
+                <p className="text-sm font-medium text-foreground">{user?.email}</p>
+                <p className="text-xs text-muted-foreground">
+                  {role === 'admin' ? 'Master Admin' : role === 'provider' ? 'Provider' : 'Read Only'}
+                </p>
+              </div>
+              <Button variant="outline" size="icon" onClick={handleSignOut}>
+                <LogOut className="h-5 w-5" />
+              </Button>
+            </div>
           </div>
+        </div>
       </header>
 
-      {/* Main Content */}
       <main className="container mx-auto px-4 py-8">
         <div className="space-y-8">
-          {/* Welcome Section */}
           <div>
             <h2 className="text-2xl font-bold text-foreground mb-2">Welcome back!</h2>
-            <p className="text-muted-foreground">
-              Here's an overview of your scheduling operations
-            </p>
+            <p className="text-muted-foreground">Here&apos;s an overview of your scheduling operations</p>
           </div>
 
-          {/* Stats Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            {stats.map((stat, index) => (
-              <Card key={index} className="overflow-hidden transition-all hover:shadow-lg">
-                <CardHeader className="flex flex-row items-center justify-between pb-2">
-                  <CardTitle className="text-sm font-medium text-muted-foreground">
-                    {stat.title}
-                  </CardTitle>
-                  <stat.icon className={`h-5 w-5 ${stat.color}`} />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-3xl font-bold text-foreground">{stat.value}</div>
-                  <p className="text-xs text-muted-foreground mt-1">{stat.change}</p>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
+          <HeroNextPeriod
+            month={hero.month}
+            year={hero.year}
+            status={hero.status}
+            errorCount={hero.errorCount}
+            warnCount={hero.warnCount}
+            lockedAt={hero.lockedAt}
+            publishedAt={hero.publishedAt}
+            activeProviders={activeProviders}
+            lastUpdated={hero.lastUpdated}
+          />
 
-          {/* Quick Actions */}
           <div>
             <h3 className="text-xl font-bold text-foreground mb-4">Quick Actions</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {quickActions.map((action, index) => (
-                <Card 
-                  key={index} 
+                <Card
+                  key={index}
                   className="overflow-hidden transition-all hover:shadow-lg hover:border-primary/50 cursor-pointer group"
                   onClick={action.action}
                 >
@@ -248,9 +306,7 @@ const Dashboard = () => {
                         <CardTitle className="text-lg group-hover:text-primary transition-colors">
                           {action.title}
                         </CardTitle>
-                        <CardDescription className="mt-1">
-                          {action.description}
-                        </CardDescription>
+                        <CardDescription className="mt-1">{action.description}</CardDescription>
                       </div>
                     </div>
                   </CardHeader>
@@ -259,56 +315,65 @@ const Dashboard = () => {
             </div>
           </div>
 
-          {/* Published Schedule Viewer */}
           <div className="mb-8">
             <PublishedScheduleViewer />
           </div>
 
-          {/* Recent Activity */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <FileSpreadsheet className="h-5 w-5 text-primary" />
-                Recent Activity
-              </CardTitle>
-              <CardDescription>Your latest scheduling operations</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {[
-                  { date: '2026-01-15', action: 'Generated January 2026 schedule', status: 'Completed' },
-                  { date: '2025-12-28', action: 'Exported December 2025 schedule', status: 'Completed' },
-                  { date: '2025-12-20', action: 'Updated provider constraints', status: 'Completed' }
-                ].map((item, index) => (
-                  <div 
-                    key={index} 
-                    className="flex items-center justify-between p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="rounded-full bg-success/20 p-2">
-                        <Calendar className="h-4 w-4 text-success" />
+          {activityState === 'ready' && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <FileSpreadsheet className="h-5 w-5 text-primary" />
+                  Recent Activity
+                </CardTitle>
+                <CardDescription>Latest schedule updates in your workspace</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {activityRows.length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-8">
+                    No schedules yet. Start your first month above.
+                  </p>
+                ) : (
+                  <div className="space-y-4">
+                    {activityRows.map((row) => (
+                      <div
+                        key={row.id}
+                        className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors"
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="rounded-full bg-primary/15 p-2 shrink-0">
+                            <Calendar className="h-4 w-4 text-primary" />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium text-foreground">
+                              {row.month} {row.year}
+                              {row.actor_email ? (
+                                <span className="text-muted-foreground font-normal">
+                                  {' '}
+                                  · {row.actor_email}
+                                </span>
+                              ) : null}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {formatDistanceToNow(new Date(row.updated_at), { addSuffix: true })}
+                            </p>
+                          </div>
+                        </div>
+                        {activityStatusBadge(row.status)}
                       </div>
-                      <div>
-                        <p className="text-sm font-medium text-foreground">{item.action}</p>
-                        <p className="text-xs text-muted-foreground">{item.date}</p>
-                      </div>
-                    </div>
-                    <span className="text-xs font-medium text-success">{item.status}</span>
+                    ))}
                   </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
+                )}
+              </CardContent>
+            </Card>
+          )}
         </div>
       </main>
 
-      {/* Footer */}
       <footer className="mt-16 border-t border-border/40 bg-card/30 backdrop-blur-sm">
         <div className="container mx-auto px-4 py-8">
           <div className="text-center space-y-2">
-            <p className="text-sm text-muted-foreground">
-              Powered by advanced AI scheduling algorithms
-            </p>
+            <p className="text-sm text-muted-foreground">Powered by advanced AI scheduling algorithms</p>
             <p className="text-xs text-muted-foreground">
               Ensuring optimal staff distribution while respecting all provider constraints
             </p>

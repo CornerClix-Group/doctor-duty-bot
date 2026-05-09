@@ -3,26 +3,17 @@ import { Upload, FileSpreadsheet, AlertCircle } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import * as XLSX from 'xlsx';
 import { parseSchedule } from '@/lib/scheduleParser';
-import { generateScheduleTemplate } from '@/lib/scheduleTemplateGenerator';
 import { extractLastPPFromExcel, extractLastPPBlockIndex } from '@/lib/extractPPFromExcel';
 import { generateScheduleTemplateBuffer } from '@/lib/scheduleTemplateGeneratorExcel';
 import { supabase } from '@/integrations/supabase/client';
+import { getNextMonthAndYear } from '@/lib/dateUtils';
 
-function getNextMonthAndYear() {
-  const now = new Date();
-  let month = now.getMonth() + 1; // 1-12 for UI
-  let year = now.getFullYear();
-
-  if (month > 12) {
-    month = 1;
-    year += 1;
-  }
-
-  return { month, year };
-}
+const MONTH_NAMES = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
 
 interface ScheduleUploadProps {
   onScheduleLoad: (data: any, base64File?: string) => void;
@@ -30,18 +21,46 @@ interface ScheduleUploadProps {
   selectedYear?: number;
 }
 
+function buildLoadSummary(scheduleData: {
+  month: string;
+  year: number;
+  providers?: { days?: { assigned?: string | null; constraint?: unknown }[] }[];
+}) {
+  const nProviders = scheduleData.providers?.length ?? 0;
+  const days = scheduleData.providers?.[0]?.days?.length ?? 0;
+  let preAssigned = 0;
+  let constraints = 0;
+  for (const p of scheduleData.providers ?? []) {
+    for (const d of p.days ?? []) {
+      if (d.assigned != null) preAssigned++;
+      if (d.constraint != null) constraints++;
+    }
+  }
+  return {
+    month: scheduleData.month,
+    year: scheduleData.year,
+    nProviders,
+    days,
+    preAssigned,
+    constraints,
+  };
+}
+
 export const ScheduleUpload = ({ onScheduleLoad, selectedMonth: propMonth, selectedYear: propYear }: ScheduleUploadProps) => {
   const [isDragging, setIsDragging] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
+  const [loadSummary, setLoadSummary] = useState<ReturnType<typeof buildLoadSummary> | null>(null);
   const [uploadedWorkbook, setUploadedWorkbook] = useState<XLSX.WorkBook | null>(null);
   const [providers, setProviders] = useState<any[]>([]);
   const [loadingProviders, setLoadingProviders] = useState(true);
   
-  // Use props if provided, otherwise default to next month
-  const { month: nextMonth, year: nextYear } = getNextMonthAndYear();
-  const selectedMonth = propMonth ?? nextMonth;
-  const selectedYear = propYear ?? nextYear;
+  // Use props if provided, otherwise default to next calendar month
+  const next = getNextMonthAndYear();
+  const defaultMonthIdx = MONTH_NAMES.indexOf(next.month);
+  const defaultMonthNumber = defaultMonthIdx >= 0 ? defaultMonthIdx + 1 : 1;
+  const selectedMonth = propMonth ?? defaultMonthNumber;
+  const selectedYear = propYear ?? next.year;
 
   useEffect(() => {
     async function loadProviders() {
@@ -101,6 +120,7 @@ export const ScheduleUpload = ({ onScheduleLoad, selectedMonth: propMonth, selec
   const handleFile = useCallback((file: File) => {
     setError(null);
     setUploadedFileName(null);
+    setLoadSummary(null);
     
     if (!file.name.match(/\.(xlsx|xls)$/)) {
       setError('Please upload an Excel file (.xlsx or .xls)');
@@ -130,6 +150,7 @@ export const ScheduleUpload = ({ onScheduleLoad, selectedMonth: propMonth, selec
         
         onScheduleLoad(scheduleData, base64);
         setUploadedFileName(file.name);
+        setLoadSummary(buildLoadSummary(scheduleData));
       } catch (err) {
         const errorMessage = err instanceof Error ? err.message : 'Unknown error';
         setError(`Failed to parse Excel file: ${errorMessage}`);
@@ -241,94 +262,101 @@ export const ScheduleUpload = ({ onScheduleLoad, selectedMonth: propMonth, selec
     }
   };
 
-  const months = [
-    'January', 'February', 'March', 'April', 'May', 'June',
-    'July', 'August', 'September', 'October', 'November', 'December'
-  ];
-
-  const currentYear = new Date().getFullYear();
-  const years = Array.from({ length: 5 }, (_, i) => currentYear + i);
-
   // Show month/year selector only when used standalone (not as a prop-controlled component)
   const showMonthYearSelector = propMonth === undefined && propYear === undefined;
 
   return (
     <div className="space-y-4">
-      {showMonthYearSelector && (
-        <div className="flex items-center gap-4 mb-4">
-          <div className="text-sm font-medium text-muted-foreground">
-            Template for: {months[selectedMonth - 1]} {selectedYear}
-          </div>
-        <Button onClick={handleDownloadTemplate} variant="default" disabled={loadingProviders || providers.length === 0}>
-          Download Template
-        </Button>
-        </div>
-      )}
-
-      {!showMonthYearSelector && (
-        <div className="flex justify-end mb-4">
-          <Button onClick={handleDownloadTemplate} variant="default">
-            Download Template
-          </Button>
-        </div>
-      )}
-      
-      <Card
-        className={`relative p-12 border-2 border-dashed transition-all ${
-          isDragging 
-            ? 'border-primary bg-primary/5 shadow-lg' 
-            : 'border-border hover:border-primary/50'
-        }`}
-        onDrop={handleDrop}
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-      >
-        <div className="flex flex-col items-center justify-center space-y-4 text-center">
-          <div className="rounded-full bg-primary/10 p-6">
-            {isDragging ? (
-              <Upload className="h-12 w-12 text-primary animate-bounce" />
-            ) : (
-              <FileSpreadsheet className="h-12 w-12 text-primary" />
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-stretch">
+        <Card className="flex flex-col justify-center p-8 min-h-[280px] border-2 border-border">
+          <div className="flex flex-col items-center justify-center gap-4 text-center flex-1">
+            {showMonthYearSelector && (
+              <p className="text-sm font-medium text-muted-foreground">
+                Template for: {MONTH_NAMES[selectedMonth - 1]} {selectedYear}
+              </p>
             )}
+            {!showMonthYearSelector && (
+              <p className="text-sm font-medium text-muted-foreground">
+                Get a blank template for this period
+              </p>
+            )}
+            <FileSpreadsheet className="h-12 w-12 text-primary" />
+            <Button
+              onClick={handleDownloadTemplate}
+              variant="default"
+              size="lg"
+              disabled={loadingProviders || providers.length === 0}
+              className="w-full sm:w-auto"
+            >
+              Download Template
+            </Button>
           </div>
-          
-          <div className="space-y-2">
-            <h3 className="text-xl font-semibold text-foreground">
-              Upload Schedule Template
-            </h3>
-            <p className="text-sm text-muted-foreground max-w-md">
-              Drag and drop your Excel schedule file here, or click to browse
-            </p>
-          </div>
+        </Card>
 
-          <input
-            type="file"
-            id="file-upload"
-            className="hidden"
-            accept=".xlsx,.xls"
-            onChange={handleFileInput}
-          />
-          <Button 
-            variant="default" 
-            size="lg"
-            onClick={() => document.getElementById('file-upload')?.click()}
-            type="button"
-          >
-            <Upload className="mr-2 h-5 w-5" />
-            Choose File
-          </Button>
-
-          <p className="text-xs text-muted-foreground">
-            Supports .xlsx and .xls formats
+        <div className="flex flex-col gap-2 min-h-[280px]">
+          <p className="text-sm text-muted-foreground">
+            First time? Download a template above first.
           </p>
-        </div>
-      </Card>
+          <Card
+            className={`relative flex-1 p-12 border-2 border-dashed transition-all ${
+              isDragging
+                ? 'border-primary bg-primary/5 shadow-lg'
+                : 'border-border hover:border-primary/50'
+            }`}
+            onDrop={handleDrop}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+          >
+            <div className="flex flex-col items-center justify-center space-y-4 text-center h-full">
+              <div className="rounded-full bg-primary/10 p-6">
+                {isDragging ? (
+                  <Upload className="h-12 w-12 text-primary animate-bounce" />
+                ) : (
+                  <FileSpreadsheet className="h-12 w-12 text-primary" />
+                )}
+              </div>
 
-      {uploadedFileName && (
-        <Alert className="bg-green-500/10 border-green-500/20 text-green-700">
+              <div className="space-y-2">
+                <h3 className="text-xl font-semibold text-foreground">
+                  Drop your filled template here
+                </h3>
+                <p className="text-sm text-muted-foreground max-w-md">
+                  Drag and drop your Excel schedule file here, or click to browse
+                </p>
+              </div>
+
+              <input
+                type="file"
+                id="file-upload"
+                className="hidden"
+                accept=".xlsx,.xls"
+                onChange={handleFileInput}
+              />
+              <Button
+                variant="default"
+                size="lg"
+                onClick={() => document.getElementById('file-upload')?.click()}
+                type="button"
+              >
+                <Upload className="mr-2 h-5 w-5" />
+                Choose File
+              </Button>
+
+              <p className="text-xs text-muted-foreground">
+                Supports .xlsx and .xls formats
+              </p>
+            </div>
+          </Card>
+        </div>
+      </div>
+
+      {uploadedFileName && loadSummary && (
+        <Alert className="bg-green-500/10 border-green-500/20 text-green-700 dark:text-green-400">
           <FileSpreadsheet className="h-4 w-4" />
           <AlertDescription>
-            Successfully uploaded: <strong>{uploadedFileName}</strong>
+            Loaded {loadSummary.month} {loadSummary.year}: {loadSummary.nProviders} providers,{' '}
+            {loadSummary.days} days, {loadSummary.preAssigned} pre-assigned shifts,{' '}
+            {loadSummary.constraints} constraint cells. Ready to generate.
           </AlertDescription>
         </Alert>
       )}
