@@ -146,12 +146,12 @@ function tryMonthYearFromCell(cell: any): { month: string; year: number } | null
   if (!cell) return null;
   if (cell.t === "d" && cell.v instanceof Date) {
     const d = cell.v;
-    return { month: MONTH_NAMES[d.getMonth()], year: d.getFullYear() };
+    return { month: MONTH_NAMES[d.getUTCMonth()], year: d.getUTCFullYear() };
   }
   if (typeof cell.v === "number" && (cell.t === "n" || cell.t === undefined)) {
     if (serialLooksLikeDate(cell.v)) {
       const d = excelSerialToDate(cell.v);
-      return { month: MONTH_NAMES[d.getMonth()], year: d.getFullYear() };
+      return { month: MONTH_NAMES[d.getUTCMonth()], year: d.getUTCFullYear() };
     }
   }
   const w = cell.w != null ? String(cell.w) : "";
