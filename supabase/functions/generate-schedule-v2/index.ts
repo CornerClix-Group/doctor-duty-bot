@@ -4,7 +4,7 @@ import * as XLSX from "https://esm.sh/xlsx@0.18.5";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { parseSchedule } from "./scheduleParser.ts";
 import { validateInputs } from "./validateSchedule.ts";
-import { solve, type ProviderRules, type MonthlyRequest } from "./solver.ts";
+import { solve, loadProviderRuleProfiles, type ProviderRules, type MonthlyRequest } from "./solver.ts";
 import type { ShiftCode } from "./shifts.ts";
 
 const supabaseAdmin = createClient(
@@ -54,6 +54,10 @@ async function buildRulesByName(): Promise<Map<string, ProviderRules>> {
       sat_disallowed_shifts: asArr<string>(c.sat_disallowed_shifts) as ShiftCode[],
       sun_allowed_shifts: sunAllowed.length ? (sunAllowed as ShiftCode[]) : null,
       avoid_sunday: !!c.avoid_sunday,
+      sat_no_start_after_hour:
+        typeof c.sat_no_start_after_hour === "number" ? c.sat_no_start_after_hour : null,
+      sun_no_start_before_hour:
+        typeof c.sun_no_start_before_hour === "number" ? c.sun_no_start_before_hour : null,
       recovery_days: c.recovery_days ?? c.n_recovery_days ?? 2,
       block_min: c.block_min ?? null,
       block_max: c.block_max ?? null,
@@ -114,14 +118,29 @@ serve(async (req) => {
     // 4) Solve (best-effort, never throws)
     let result;
     try {
-      result = solve(parsed, rules, requests);
+      const providerProfiles = await loadProviderRuleProfiles(supabaseAdmin);
+      result = solve(parsed, rules, requests, providerProfiles);
     } catch (e: any) {
       return json(200, {
         month: parsed.month,
         year: parsed.year,
+        base_coverage_value: parsed.base_coverage_value,
+        monday_ft_rule_active: parsed.monday_ft_rule_active,
+        coverage_pattern: parsed.coverage_pattern,
         schedule: [],
         provider_totals: {},
         pp_hours: {},
+        assignments_by_provider: {},
+        generated_at: new Date().toISOString(),
+        success: false,
+        violations: [{ type: "coverage_unfilled", message: `Solver crash: ${e?.message || e}` }],
+        softScores: {
+          isolatedShifts: 0,
+          circadianFlips: 0,
+          shiftFairnessVariance: 0,
+          callFairnessVariance: 0,
+          weekendFairnessVariance: 0,
+        },
         errors: [{ rule: 0, severity: "error", message: `Solver crash: ${e?.message || e}` }],
         warnings: [],
         info: [],
@@ -153,6 +172,9 @@ serve(async (req) => {
         monday_ft_rule_active: result.monday_ft_rule_active,
         pp_hours: result.pp_hours,
         validation_results: {
+          success: result.success,
+          violations: result.violations,
+          softScores: result.softScores,
           errors: result.errors,
           warnings: result.warnings,
           info: result.info,
