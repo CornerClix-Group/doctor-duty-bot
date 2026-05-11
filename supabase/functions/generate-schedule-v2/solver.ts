@@ -391,7 +391,7 @@ export async function loadProviderRuleProfiles(
 ): Promise<Record<string, ProviderRuleProfile>> {
   const { data, error } = await supabaseAdmin
     .from("provider_profiles")
-    .select("id, last_name, night_only, evening_only, ft_or_mida_only, monthly_max_nights, night_block_min_length, night_block_max_length, nights_clean_days_after_block, provider_group, requires_80hr_pp")
+    .select("id, last_name, night_only, evening_only, ft_or_mida_only, monthly_max_nights, night_block_min_length, night_block_max_length, nights_clean_days_after_block, provider_group, requires_80hr_pp, sat_no_start_after_hour, sun_no_start_before_hour, avoid_sunday")
     .eq("active", true);
   if (error) throw error;
   const out: Record<string, ProviderRuleProfile> = {};
@@ -408,6 +408,11 @@ export async function loadProviderRuleProfiles(
       nights_clean_days_after_block: row.nights_clean_days_after_block ?? null,
       provider_group: row.provider_group ?? null,
       requires_80hr_pp: row.requires_80hr_pp ?? null,
+      sat_no_start_after_hour:
+        typeof row.sat_no_start_after_hour === "number" ? row.sat_no_start_after_hour : null,
+      sun_no_start_before_hour:
+        typeof row.sun_no_start_before_hour === "number" ? row.sun_no_start_before_hour : null,
+      avoid_sunday: !!row.avoid_sunday,
     };
   }
   return out;

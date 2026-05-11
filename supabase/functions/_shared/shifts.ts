@@ -96,6 +96,23 @@ export function creditHours(code: ShiftCode | string): number {
   return SHIFT_DEFS[canon].hours;
 }
 
+/**
+ * Return the start hour (0-23) for a shift code, normalizing through the alias map.
+ * Returns `null` if the code is not in the canonical catalog.
+ *
+ * Hour is local-clock, NOT "hours from midnight that may be > 23". Shifts whose
+ * canonical startHour is encoded as a value past 24 in SHIFT_DEFS (e.g. some
+ * night-after wrap cases) are not present today — but if added later, this
+ * helper still returns the raw start hour for time-window comparisons.
+ */
+export function shiftStartHour(code: ShiftCode | string): number | null {
+  const canon = toCanonicalShift(code);
+  if (canon === null) return null;
+  const def = SHIFT_DEFS[canon];
+  if (!def) return null;
+  return def.startHour;
+}
+
 export const ALL_SHIFTS = Object.keys(SHIFT_DEFS) as ShiftCode[];
 
 export const REGULAR_SHIFTS: ShiftCode[] = [

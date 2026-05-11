@@ -113,10 +113,43 @@ PROVIDER-SPECIFIC RULES (from provider_profiles)
 - Lopez → D1 or FT AM only; ≤2 consecutive total shifts; never N.
 - Orlando, Beckman → Any except N.
 - Ryals, Campo-Ford, Sellars-Pompey → only FT AM, FT PM, FT W, MIDA.
-- Arnett → No E/N on Sat; on Sun only MIDB/E/N; avoid Sun if possible.
-- Beach → Avoid Sun; if must work Sun → only MIDB/E/N.
+- Arnett (HARD weekend time-of-day windows):
+    * Saturday: NO shift whose start time is strictly AFTER 3:00 pm
+      (so D1, D2, MIDA, MIDB, 3p are OK; E, N, 5p, 10p are NOT).
+    * Sunday: NO shift whose start time is strictly BEFORE 2:00 pm
+      (so MIDB, 3p, E, 5p, N, 10p, FT PM are OK; D1, D2, MIDA, FT AM are NOT).
+    * Also soft-prefer to avoid Sundays when an alternative provider fits.
+- Beach (SOFT preference): Tries to avoid Sundays. Prefer assigning other
+  providers to Sunday slots when feasible. Only schedule Beach on Sundays
+  if no other eligible provider can take the slot. If Beach MUST work a
+  Sunday, allowed shifts are MIDB / E / N.
 - Akers → All except "C".
 - D1 eligibility priority: Lopez > Arnett > Beres/Illston/Freeman/Ferguson/Jones > others.
+
+BUILD ORDER (assignment phase policy)
+
+When generating the schedule, fill slots in this order to maximize fairness
+and minimize circadian flip-flopping:
+
+  Phase 1 — NIGHTS first:
+    For every date in the month, assign the N (Night) slot before touching
+    any other slot. Nights drive recovery windows and block structure
+    (especially for Coffin and any provider with night quotas), so locking
+    them in first prevents downstream constraint conflicts.
+
+  Phase 2 — WEEKENDS next:
+    After all nights are placed, walk every Saturday and Sunday and fill
+    their remaining slots (D1, D2, MIDA, MIDB, E, FT W, FT W12). Doing
+    weekends before weekdays protects the weekend quota distribution
+    across providers and avoids leaving weekend slots to scraps.
+
+  Phase 3 — EVERYTHING ELSE:
+    Finally, fill the remaining weekday non-night slots.
+
+Within each phase, prefer assignments that keep each provider's shift mix
+balanced (avoid back-to-back "flips" like D1 → E → D2) and that respect
+ongoing streak / recovery state. Tightness order within a single day still
+applies as a tiebreaker.
 
 IMPOSSIBLE CONSTRAINTS HANDLING:
 
@@ -125,10 +158,12 @@ If constraints cannot all be satisfied:
 - Prioritize in this order:
   1. Locked cells (never violate)
   2. Daily constraint codes (never violate)
-  3. Rest requirements (12 hours, N recovery)
-  4. Target total shifts (try to match exactly)
-  5. Weekend quota (try to match exactly)
-  6. Pay Period totals (try to match 8)
+  3. Provider weekend time-of-day windows like Arnett's Sat/Sun caps (never violate)
+  4. Rest requirements (12 hours, N recovery)
+  5. Target total shifts (try to match exactly)
+  6. Weekend quota (try to match exactly)
+  7. Pay Period totals (try to match 8)
+- Soft preferences (e.g. Beach avoid_sunday) yield first if a hard rule needs them to.
 - Can reduce days off (change X to a shift) if needed to meet targets
 - Return detailed error/warning explaining what couldn't be met
 

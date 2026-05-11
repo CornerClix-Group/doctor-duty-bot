@@ -2,7 +2,17 @@
 // Mirrors a subset of the solver's eligibility rules so the user gets
 // instant feedback. Authoritative validation still runs server-side.
 
+import { shiftStartHour } from "../../../supabase/functions/_shared/shifts.ts";
+
 export type DayMode = 6 | 7 | 8;
+
+function formatHour(h: number): string {
+  if (!Number.isFinite(h)) return String(h);
+  if (h === 0) return "12 am";
+  if (h === 12) return "12 pm";
+  if (h < 12) return `${h} am`;
+  return `${h - 12} pm`;
+}
 
 export interface ProviderRule {
   name: string;
@@ -14,6 +24,10 @@ export interface ProviderRule {
   sat_disallowed_shifts: string[];
   sun_allowed_shifts: string[] | null;
   avoid_sunday: boolean;
+  /** Hard window: ban Sat shifts that start strictly after this hour. null = no rule. */
+  sat_no_start_after_hour?: number | null;
+  /** Hard window: ban Sun shifts that start strictly before this hour. null = no rule. */
+  sun_no_start_before_hour?: number | null;
   max_consec: number | null;
   max_consec_n: number | null;
   recovery_days: number;
@@ -141,6 +155,27 @@ export function checkCellEdit(
   }
   if (day === 0 && rule.avoid_sunday) {
     issues.push({ severity: "warning", message: `${provider} prefers to avoid Sundays.` });
+  }
+
+  // Weekend time-of-day windows (e.g. Will Arnett: no Sat shift starting after 3 pm,
+  // no Sun shift starting before 2 pm). These are HARD rules — emit as errors.
+  if (day === 6 && rule.sat_no_start_after_hour != null) {
+    const sh = shiftStartHour(shift);
+    if (sh != null && sh > rule.sat_no_start_after_hour) {
+      issues.push({
+        severity: "error",
+        message: `${provider} cannot work shifts starting after ${formatHour(rule.sat_no_start_after_hour)} on Saturdays (${shift} starts at ${formatHour(sh)}).`,
+      });
+    }
+  }
+  if (day === 0 && rule.sun_no_start_before_hour != null) {
+    const sh = shiftStartHour(shift);
+    if (sh != null && sh < rule.sun_no_start_before_hour) {
+      issues.push({
+        severity: "error",
+        message: `${provider} cannot work shifts starting before ${formatHour(rule.sun_no_start_before_hour)} on Sundays (${shift} starts at ${formatHour(sh)}).`,
+      });
+    }
   }
 
   // C / A10 weekend ban

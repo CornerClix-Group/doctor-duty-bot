@@ -270,8 +270,10 @@ export type Database = {
           recovery_days: number | null
           rest_hours: number | null
           sat_disallowed_shifts: string[] | null
+          sat_no_start_after_hour: number | null
           saturday_restrictions: string | null
           sun_allowed_shifts: string[] | null
+          sun_no_start_before_hour: number | null
           sunday_restrictions: string | null
           updated_at: string
           weekend_rules: string[] | null
@@ -295,8 +297,10 @@ export type Database = {
           recovery_days?: number | null
           rest_hours?: number | null
           sat_disallowed_shifts?: string[] | null
+          sat_no_start_after_hour?: number | null
           saturday_restrictions?: string | null
           sun_allowed_shifts?: string[] | null
+          sun_no_start_before_hour?: number | null
           sunday_restrictions?: string | null
           updated_at?: string
           weekend_rules?: string[] | null
@@ -320,8 +324,10 @@ export type Database = {
           recovery_days?: number | null
           rest_hours?: number | null
           sat_disallowed_shifts?: string[] | null
+          sat_no_start_after_hour?: number | null
           saturday_restrictions?: string | null
           sun_allowed_shifts?: string[] | null
+          sun_no_start_before_hour?: number | null
           sunday_restrictions?: string | null
           updated_at?: string
           weekend_rules?: string[] | null

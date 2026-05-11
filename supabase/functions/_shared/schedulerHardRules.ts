@@ -6,6 +6,7 @@ import {
   REGULAR_SHIFTS,
   SHIFT_DEFS,
   requiredShiftsForDay,
+  shiftStartHour,
   toCanonicalShift,
   type DayMode,
   type ShiftCode,
@@ -43,6 +44,9 @@ export interface SchedulerProviderProfile {
   requires_80hr_pp?: boolean | null;
   provider_group?: string | null;
   counts_in_quotas?: boolean | null;
+  sat_no_start_after_hour?: number | null;
+  sun_no_start_before_hour?: number | null;
+  avoid_sunday?: boolean | null;
 }
 
 /** @alias */
@@ -95,6 +99,25 @@ export function isShiftEligibleForProfile(
   shift: string,
 ): boolean {
   return eligibleShiftCodesForProfile(profile).has(shift);
+}
+
+export function weekendTimeWindowAllows(
+  profile: SchedulerProviderProfile | undefined,
+  shift: string,
+  dayOfWeek: number,
+): boolean {
+  if (!profile) return true;
+  if (dayOfWeek !== 0 && dayOfWeek !== 6) return true;
+  const startHour = shiftStartHour(shift);
+  if (startHour == null) return true;
+  if (dayOfWeek === 6) {
+    const cap = profile.sat_no_start_after_hour;
+    if (cap != null && Number.isFinite(cap) && startHour > cap) return false;
+  } else {
+    const floor = profile.sun_no_start_before_hour;
+    if (floor != null && Number.isFinite(floor) && startHour < floor) return false;
+  }
+  return true;
 }
 
 export function recoveryDaysAfterNightBlock(
@@ -318,6 +341,20 @@ export function checkPlacement(
   }
 
   const dow = new Date(date + "T12:00:00").getDay();
+
+  // Weekend time-of-day window (Arnett-style hard rule):
+  //   Sat: ban shifts starting AFTER sat_no_start_after_hour
+  //   Sun: ban shifts starting BEFORE sun_no_start_before_hour
+  if (!weekendTimeWindowAllows(profile, shift, dow)) {
+    return {
+      type: "eligibility",
+      provider: providerName,
+      date,
+      shift,
+      message: `Shift ${shift} violates ${providerName}'s weekend time-of-day window`,
+    };
+  }
+
   const mode = context.dayMode(date);
   const req = requiredShiftsForDay(mode, dow, context.mondayFtRuleActive);
   if (!req.includes(shift)) {
