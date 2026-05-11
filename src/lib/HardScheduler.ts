@@ -593,24 +593,24 @@ export class HardScheduler {
     }
 
     this.computeTotals();
-    const dates = Object.keys(this.schedule).sort();
+    const allDates = Object.keys(this.schedule).sort();
     for (const p of this.providers) {
       const name = p.name;
-      if (maxConsecutiveClinicalDays(this.schedule, name, dates) > 4) {
+      if (maxConsecutiveClinicalDays(this.schedule, name, allDates) > 4) {
         this.violations.push({
           type: "max_consecutive_clinical",
           provider: name,
           message: "Exceeds 4 consecutive clinical days",
         });
       }
-      if (maxClinicalInRolling7(this.schedule, name, dates) > 4) {
+      if (maxClinicalInRolling7(this.schedule, name, allDates) > 4) {
         this.violations.push({
           type: "rolling_7_clinical",
           provider: name,
           message: "Exceeds 4 clinical shifts in a rolling 7-day window",
         });
       }
-      this.violations.push(...circadianRatchetViolations(this.schedule, name, dates));
+      this.violations.push(...circadianRatchetViolations(this.schedule, name, allDates));
     }
 
     return {
