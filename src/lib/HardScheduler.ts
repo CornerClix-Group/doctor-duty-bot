@@ -603,14 +603,14 @@ export class HardScheduler {
           message: "Exceeds 4 consecutive clinical days",
         });
       }
-      if (maxClinicalInRolling7(this.schedule, name, dates) > 4) {
+      if (maxClinicalInRolling7(this.schedule, name, allDates) > 4) {
         this.violations.push({
           type: "rolling_7_clinical",
           provider: name,
           message: "Exceeds 4 clinical shifts in a rolling 7-day window",
         });
       }
-      this.violations.push(...circadianRatchetViolations(this.schedule, name, dates));
+      this.violations.push(...circadianRatchetViolations(this.schedule, name, allDates));
     }
 
     return {
