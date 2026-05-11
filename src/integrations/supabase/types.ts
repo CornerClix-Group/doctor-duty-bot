@@ -270,8 +270,10 @@ export type Database = {
           recovery_days: number | null
           rest_hours: number | null
           sat_disallowed_shifts: string[] | null
+          sat_no_start_after_hour: number | null
           saturday_restrictions: string | null
           sun_allowed_shifts: string[] | null
+          sun_no_start_before_hour: number | null
           sunday_restrictions: string | null
           updated_at: string
           weekend_rules: string[] | null
@@ -295,8 +297,10 @@ export type Database = {
           recovery_days?: number | null
           rest_hours?: number | null
           sat_disallowed_shifts?: string[] | null
+          sat_no_start_after_hour?: number | null
           saturday_restrictions?: string | null
           sun_allowed_shifts?: string[] | null
+          sun_no_start_before_hour?: number | null
           sunday_restrictions?: string | null
           updated_at?: string
           weekend_rules?: string[] | null
@@ -320,8 +324,10 @@ export type Database = {
           recovery_days?: number | null
           rest_hours?: number | null
           sat_disallowed_shifts?: string[] | null
+          sat_no_start_after_hour?: number | null
           saturday_restrictions?: string | null
           sun_allowed_shifts?: string[] | null
+          sun_no_start_before_hour?: number | null
           sunday_restrictions?: string | null
           updated_at?: string
           weekend_rules?: string[] | null
@@ -340,17 +346,30 @@ export type Database = {
         Row: {
           active: boolean | null
           allowed_shifts: string[] | null
+          avoid_sunday: boolean | null
           block_pattern: string | null
+          counts_in_quotas: boolean | null
           created_at: string | null
           email: string
+          evening_only: boolean | null
           first_name: string
+          ft_or_mida_only: boolean | null
           id: string
           last_name: string
+          monthly_max_nights: number | null
           n_recovery_days: number | null
+          night_block_max_length: number | null
+          night_block_min_length: number | null
+          night_only: boolean | null
+          nights_clean_days_after_block: number | null
           preferred_shifts: string[] | null
+          provider_group: string | null
+          requires_80hr_pp: boolean | null
           rest_hours: number | null
           role: string | null
+          sat_no_start_after_hour: number | null
           saturday_restrictions: string | null
+          sun_no_start_before_hour: number | null
           sunday_restrictions: string | null
           updated_at: string | null
           user_id: string | null
@@ -358,17 +377,30 @@ export type Database = {
         Insert: {
           active?: boolean | null
           allowed_shifts?: string[] | null
+          avoid_sunday?: boolean | null
           block_pattern?: string | null
+          counts_in_quotas?: boolean | null
           created_at?: string | null
           email: string
+          evening_only?: boolean | null
           first_name: string
+          ft_or_mida_only?: boolean | null
           id?: string
           last_name: string
+          monthly_max_nights?: number | null
           n_recovery_days?: number | null
+          night_block_max_length?: number | null
+          night_block_min_length?: number | null
+          night_only?: boolean | null
+          nights_clean_days_after_block?: number | null
           preferred_shifts?: string[] | null
+          provider_group?: string | null
+          requires_80hr_pp?: boolean | null
           rest_hours?: number | null
           role?: string | null
+          sat_no_start_after_hour?: number | null
           saturday_restrictions?: string | null
+          sun_no_start_before_hour?: number | null
           sunday_restrictions?: string | null
           updated_at?: string | null
           user_id?: string | null
@@ -376,17 +408,30 @@ export type Database = {
         Update: {
           active?: boolean | null
           allowed_shifts?: string[] | null
+          avoid_sunday?: boolean | null
           block_pattern?: string | null
+          counts_in_quotas?: boolean | null
           created_at?: string | null
           email?: string
+          evening_only?: boolean | null
           first_name?: string
+          ft_or_mida_only?: boolean | null
           id?: string
           last_name?: string
+          monthly_max_nights?: number | null
           n_recovery_days?: number | null
+          night_block_max_length?: number | null
+          night_block_min_length?: number | null
+          night_only?: boolean | null
+          nights_clean_days_after_block?: number | null
           preferred_shifts?: string[] | null
+          provider_group?: string | null
+          requires_80hr_pp?: boolean | null
           rest_hours?: number | null
           role?: string | null
+          sat_no_start_after_hour?: number | null
           saturday_restrictions?: string | null
+          sun_no_start_before_hour?: number | null
           sunday_restrictions?: string | null
           updated_at?: string | null
           user_id?: string | null
@@ -443,6 +488,57 @@ export type Database = {
           weekend_quota?: number
         }
         Relationships: []
+      }
+      schedule_overrides: {
+        Row: {
+          created_at: string | null
+          created_by: string | null
+          date: string
+          id: string
+          provider_id: string | null
+          rationale: string | null
+          rule_violated: string
+          schedule_id: string
+          shift_assigned: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          created_by?: string | null
+          date: string
+          id?: string
+          provider_id?: string | null
+          rationale?: string | null
+          rule_violated: string
+          schedule_id: string
+          shift_assigned?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          created_by?: string | null
+          date?: string
+          id?: string
+          provider_id?: string | null
+          rationale?: string | null
+          rule_violated?: string
+          schedule_id?: string
+          shift_assigned?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "schedule_overrides_provider_id_fkey"
+            columns: ["provider_id"]
+            isOneToOne: false
+            referencedRelation: "provider_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "schedule_overrides_schedule_id_fkey"
+            columns: ["schedule_id"]
+            isOneToOne: false
+            referencedRelation: "schedules"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       schedules: {
         Row: {
